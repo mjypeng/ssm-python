@@ -201,7 +201,7 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
             if Output_logL_:
                 detinvF     = np.linalg.det(invF)
                 if detinvF > 0:   Result_logL_ = Result_logL_ - np.log(detinvF)
-                elif detinvF < 0: Result_logL_ = nan
+                elif detinvF < 0: Result_logL_ = np.nan
             if Output_var_:
                 if t > d or not Fns[t]: Result_var_ = Result_var_ + v.T*invF*v
         if RQdyn:
@@ -219,7 +219,7 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
     elif mode == 3: # disturbance smoother
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_RQ,Result_QRt
     elif mode == 4: # loglikelihood
-        output = Result_logL_+Result_var_,Result_var_
+        output = Result_logL_+Result_var_[0,0],Result_var_[0,0]
     elif mode == 5: # fast smoother
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_L1,Result_QRt
     elif mode == 6: # fast state smoother

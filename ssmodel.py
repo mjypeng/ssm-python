@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from ssalg import *
-from scipy.linalg import block_diag
+from scipy.linalg import block_diag as blkdiag
 from scipy.optimize import minimize
 
 def x_intv(n, intv_type, tau):
@@ -78,6 +78,41 @@ def mat_var(p=1,cov=True):
             'shape': (p,p),
             'func': f_psi_to_cov(p),
             'nparam': p*(p+1)/2}
+
+def mat_dupvar(p, d, cov=True):
+    #   Each of the p variables have a single variance duplicated d times
+    #   cov = True indicates that there are covariances between the p variables, each of which are also duplicated d times
+    if d == 1: return mat_var(p, cov)
+
+    if cov:
+        mask   = np.nonzero(np.tril(np.ones((p,p),dtype=bool) & ~np.eye(p,dtype=bool))) # mask for a single full covariance matrix
+        W      = np.matrix(np.eye(d))
+        def psi_to_dup_cov(x):
+            # bound variables: p, mask, W
+            x1  = np.asarray(x[:p])
+            x2  = np.asarray(x[p:])
+            Y   = np.exp(x1)[:,None].T
+            Y   = Y.T * Y
+            C   = np.zeros((p,p))
+            C[mask] = Y[mask] * (x2/np.sqrt(1 + x2**2))
+            C   = C + C.T + np.diag(np.diag(Y))
+            return np.kron(C, W)
+
+        return {
+            'gaussian': True,
+            'dynamic':  False,
+            'constant': False,
+            'shape': (p*d,)*2,
+            'func': psi_to_dup_cov,
+            'nparam': p*(p+1)/2}
+    else:
+        return {
+            'gaussian': True,
+            'dynamic':  False,
+            'constant': False,
+            'shape': (p*d,)*2,
+            'func': lambda x: np.asmatrix(np.diag(np.repeat(np.exp(2*np.asarray(x)),d))),
+            'nparam': p}
 
 def mat_interlvar(p, q, cov):
     # %MAT_INTERLVAR Create base matrices for q-interleaved variance noise.
@@ -219,23 +254,23 @@ def model_seasonal(seasonal_type,s):
         c     = mat_const(np.zeros((s,1)))
         a1    = mat_const(np.zeros((s,1)))
         P1    = mat_const(np.diag([np.inf]*s))
-    elif seasonal_type in ('trig1','trig2'):
+    elif seasonal_type in ('trig1','trig2','trig fixed'):
         #-- Trigonometric seasonal component --#
-        Z  = mat_const(np.hstack([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))]))
+        Z  = mat_const(np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))]))
         T  = []
         if s%2 == 0:
             for i in range(1,s/2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
-            T  = mat_const(block_diag(*(T+[-1])))
+            T  = mat_const(blkdiag(*(T+[-1])))
         else: # s%2 == 1
             for i in range(1,(s+1)/2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
-            T  = mat_const(block_diag(*T))
-        R  = mat_const(np.eye(s-1))
+            T  = mat_const(blkdiag(*T))
         if seasonal_type == 'trig1':
             #-- Trigonometric seasonal component with equal variance --#
+            R  = mat_const(np.eye(s-1))
             W  = np.matrix(np.eye(s-1))
             Q  = {
                 'gaussian': True,
@@ -244,8 +279,12 @@ def model_seasonal(seasonal_type,s):
                 'shape': (s-1,s-1),
                 'func': lambda x: np.exp(2*x[0])*W,
                 'nparam': 1}
-        else:
+        elif seasonal_type == 'trig2':
+            R  = mat_const(np.eye(s-1))
             Q  = mat_var(s-1,False)
+        else: # seasonal_type == 'trig fixed'
+            R  = mat_const(np.zeros((s-1,0)))
+            Q  = mat_const(np.zeros((0,0)))
         c   = mat_const(np.zeros((s-1,1)))
         a1  = mat_const(np.zeros((s-1,1)))
         P1  = mat_const(np.diag([np.inf]*(s-1)))
@@ -277,11 +316,11 @@ def model_reg(x, dynamic=False):
         'a1': mat_const(np.zeros((m,1))),
         'P1': mat_const(np.diag([np.inf]*m))}
 
-def model_stsm(lvl, seas, s, cycle=False, x=None):
+def model_stsm(lvl, seasonal_type, s, cycle=False, x=None):
     # %SSM_STSM Create SSMODEL object for structural time series models.
-    # %   model = SSM_STSM(lvl, seas, s[, cycle, x, varname])
+    # %   model = SSM_STSM(lvl, seasonal_type, s[, cycle, x, varname])
     # %       lvl is 'level' or 'trend'.
-    # %       seas is the seasonal type (see ssm_seasonal).
+    # %       seasonal_type is the seasonal type (see ssm_seasonal).
     # %       s is the seasonal period.
     # %       Set cycle to true if there is a cycle component in the model.
     # %       x is explanatory variables.
@@ -301,7 +340,7 @@ def model_stsm(lvl, seas, s, cycle=False, x=None):
             'a1': mat_const(np.zeros((0,1))),
             'P1': mat_const(np.zeros((0,0)))}
 
-    model2 = model_seasonal(seas,s)
+    model2 = model_seasonal(seasonal_type,s)
 
     # if cycle, model = [model ssm_cycle]; end
     # if nargin >= 5, model = [model ssm_reg(varargin{:})]; end
@@ -309,20 +348,19 @@ def model_stsm(lvl, seas, s, cycle=False, x=None):
     return {
         'H':  model1['H'],
         'Z':  mat_const(np.hstack([model1['Z']['mat'],model2['Z']['mat']])),
-        'T':  mat_const(block_diag(model1['T']['mat'],model2['T']['mat'])),
-        'R':  mat_const(block_diag(model1['R']['mat'],model2['R']['mat'])),
+        'T':  mat_const(blkdiag(model1['T']['mat'],model2['T']['mat'])),
+        'R':  mat_const(blkdiag(model1['R']['mat'],model2['R']['mat'])),
         'Q':  {
             'gaussian': True,
             'dynamic':  False,
             'constant': False,
             'shape': np.asarray(model1['Q']['shape']) + np.asarray(model2['Q']['shape']),
-            'func': lambda x: np.asmatrix(block_diag(model1['Q']['func'](x[:model1['Q']['nparam']]),model2['Q']['func'](x[model1['Q']['nparam']:]))),
+            'func': lambda x: np.asmatrix(blkdiag(model1['Q']['func'](x[:model1['Q']['nparam']]),model2['Q']['func'](x[model1['Q']['nparam']:]))),
             'nparam': model1['Q']['nparam'] + model2['Q']['nparam']},
         'c':  mat_const(np.vstack([model1['c']['mat'],model2['c']['mat']])),
         'a1': mat_const(np.vstack([model1['a1']['mat'],model2['a1']['mat']])),
-        'P1': mat_const(block_diag(model1['P1']['mat'],model2['P1']['mat']))}
+        'P1': mat_const(blkdiag(model1['P1']['mat'],model2['P1']['mat']))}
 
-# Nested functions inside a function can be defined multiple times, but any outside variables "bound" into the function will take the last value at the outer function exit, making multiple function definitions equivalent ...
 def model_cat(models):
     # Combine state space models
     N  = len(models)
@@ -333,6 +371,8 @@ def model_cat(models):
     return final_model
 
 def func_stat_to_dyn(func,n):
+    #-- helper function for mat_cat() --#
+    # Nested functions inside a function can be defined multiple times, but any outside variables "bound" into the function will take the last value at the outer function exit, making multiple function definitions equivalent ...
     return lambda x: [func(x)]*n
 
 def mat_cat(M,mats):
@@ -353,7 +393,7 @@ def mat_cat(M,mats):
         mstack  = lambda x: np.asmatrix(np.vstack(x))
         shape   = sum([mats[i]['shape'][0] for i in range(N)]), mats[0]['shape'][1]
     else:
-        mstack  = lambda x: np.asmatrix(block_diag(*x))
+        mstack  = lambda x: np.asmatrix(blkdiag(*x))
         shape   = sum([mats[i]['shape'][0] for i in range(N)]), sum([mats[i]['shape'][1] for i in range(N)])
     if dynamic: shape += (n,)
 
@@ -442,9 +482,8 @@ def model_mvseasonal(p, cov, seasonal_type, s):
     # %       p is the number of variables.
     # %       cov specifies complete covariance if true, or complete independence if
     # %           false
-
-    H  = mat_var(1)
     if seasonal_type in ('dummy','dummy fixed'):
+        m   = p*(s-1)
         Z   = mat_const(np.kron(np.eye(p),np.hstack([np.matrix(1),np.zeros((1,s-2))])))
         T   = mat_const(np.kron(np.eye(p),bmat([[-np.ones((1,s-1))],[np.eye(s-2),np.zeros((s-2,1))]])))
         if seasonal_type == 'dummy':
@@ -453,11 +492,9 @@ def model_mvseasonal(p, cov, seasonal_type, s):
         else:
             R   = mat_const(np.zeros((p*(s-1),0)))
             Q   = mat_const(np.zeros((0,0)))
-        c   = mat_const(np.zeros((p*(s-1),)*2))
-        a1  = mat_const(np.zeros((p*(s-1),)*2))
-        P1  = mat_const(np.diag([np.inf]*(p*(s-1))))
     elif seasonal_type == 'h&s':
         # Multivariate H&S seasonal is always assumed independent
+        m   = p*s
         Z   = np.kron(np.eye(p),np.hstack([np.matrix(1),np.zeros((1,s-1))]))
         T   = np.kron(np.eye(p),np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.matrix(1),np.zeros((1,s-1))]]))
         R   = np.eye(p*s)
@@ -469,31 +506,67 @@ def model_mvseasonal(p, cov, seasonal_type, s):
             'shape': (s*p,)*2,
             'func': lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W),
             'nparam': p}
-        c   = mat_const(np.zeros((p*(s-1),)*2))
-        a1  = mat_const(np.zeros((p*(s-1),)*2))
-        P1  = mat_const(np.diag([np.inf]*(p*(s-1))))
-    elif seasonal_type == 'trig1':
-#         [Z T R]         = mat_mvtrig(p, s, false);
-#         [Q Qmmask]      = mat_dupvar(p, cov, s - 1);
-#         [fun gra psi]   = fun_dupvar(p, cov, s - 1, 'omega');
-#     elif seasonal_type == 'trig2':
-#         [Z T R]         = mat_mvtrig(p, s, false);
-#         [Q Qmmask]      = mat_interlvar(p, s - 1, cov);
-#         [fun gra psi]   = fun_interlvar(p, s - 1, cov, 'omega');
-#     elif seasonal_type == 'trig fixed':
-#         [Z T R]         = mat_mvtrig(p, s, true);
-#         Q               = [];
-#         fun             = {};
+    elif seasonal_type in ('trig1','trig2','trig fixed'):
+        m   = p*(s-1)
+        Z   = mat_const(np.kron(np.eye(p),np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))])))
+        T  = []
+        if s%2 == 0:
+            for i in range(1,s/2):
+                Lambda  = 2*np.pi*i/s
+                T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
+            T.append(-1)
+        else: # s%2 == 1
+            for i in range(1,(s+1)/2):
+                Lambda  = 2*np.pi*i/s
+                T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
+        T  = mat_const(np.kron(np.eye(p),blkdiag(*T)))
+        if seasonal_type == 'trig1':
+            R  = mat_const(np.eye(p*(s-1)))
+            Q  = mat_dupvar(p, s-1, cov)
+        elif seasonal_type == 'trig2':
+            R  = mat_const(np.eye(p*(s-1)))
+            Q  = mat_interlvar(p, s-1, cov)
+        else: # seasonal_type == 'trig fixed'
+            R  = mat_const(np.zeros((p*(s-1),0)))
+            Q  = mat_const(np.zeros((0,0)))
 
-# if isempty(fun), model = [ssm_null(p) ssmodel(struct('type', 'multivariate seasonal', 'p', p, 'subtype', type, 's', s), np.zeros(p), Z, T, R, Q)];
-# else model = [ssm_null(p) ssmodel(struct('type', 'multivariate seasonal', 'p', p, 'subtype', type, 's', s), np.zeros(p), Z, T, R, ssmat(Q, Qmmask), 'Q', fun, gra, psi)];
-# end
+    return {
+        'H':  mat_var(p,True),
+        'Z':  Z,
+        'T':  T,
+        'R':  R,
+        'Q':  Q,
+        'c':  mat_const(np.zeros((m,1))),
+        'a1': mat_const(np.zeros((m,1))),
+        'P1': mat_const(np.diag([np.inf]*m))}
 
+def model_mvreg(p, x, dep=None):
+    # %MAT_MVREG Create base matrices for multivariate regression component.
+    # %   [Z Zdmmask Zdvec T R] = MAT_MVREG(p, x, dep)
+    # %       p is the number of observation variables.
+    # %       dep is a p*size(x, 1) logical matrix which specifies the dependence of
+    # %           each observation with each regression variable.
+    m0,n  = x.shape
+    if dep is not None:
+        m   = np.sum(dep)
+        X   = [x[None,dep[i,:],:] for i in range(p)]
+        Z   = mat_const([blkdiag(*[X[i][:,:,t] for i in range(p)]) for t in range(n)],dynamic=True)
+    else:
+        m   = p*m0
+        Z   = mat_const(np.dsplit(np.kron(np.eye(p)[:,:,None],x[None,:,:]),n),dynamic=True)
+    return {
+        'H':  mat_var(p,True),
+        'Z':  Z,
+        'T':  mat_const(np.eye(m)),
+        'R':  mat_const(np.zeros((m,0))),
+        'Q':  mat_const(np.zeros((0,0))),
+        'c':  mat_const(np.zeros((m,1))),
+        'a1': mat_const(np.zeros((m,1))),
+        'P1': mat_const(np.diag([np.inf]*m))}
 
-
-def model_mvstsm(p, cov, lvl, seas, s, cycle=False, x=None):
+def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
     # %SSM_MVSTSM Create SSMODEL object for multivariate structural time series models.
-    # %   model = SSM_MVSTSM(p, cov, lvl, seas, s[, cycle, x, dep (?)])
+    # %   model = SSM_MVSTSM(p, cov, lvl, seasonal_type, s[, cycle, x, dep (?)])
     # %       p is the number of variables.
     # %       cov specifies complete covariance if true, or complete independence if
     # %           false, extended to a vector where needed.
@@ -513,6 +586,12 @@ def model_mvstsm(p, cov, lvl, seas, s, cycle=False, x=None):
             'a1': mat_const(np.zeros((0,1))),
             'P1': mat_const(np.zeros((0,0)))}; cov = cov[1:]
 
-    # model   = [lvl ssm_mvseasonal(p, cov(k), seas, s)];
+    model2  = model_mvseasonal(p, cov[0], seasonal_type, s)
+
+    models  = [model1,model2]
+
     # if cycle, model = [model ssm_mvcycle(p, cov(k+1))]; end
-    # if nargin >= 7, model = [model ssm_mvreg(p, varargin{:})]; end
+
+    if x is not None: models.append(model_mvreg(p, x))
+
+    return models #model_cat(models)

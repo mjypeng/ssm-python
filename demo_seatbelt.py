@@ -36,7 +36,7 @@ allmis  = np.all(mis,0)
 #-- Estimation of basic structural time series model --#
 bstsm   = ssm.model_stsm('level', 'trig1', 12)
 # bstsm   = ssm.model_cat([ssm.model_llm(),ssm.model_seasonal('trig1', 12)])
-opt_x   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7]))[0]
+opt_x   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2)[0]
 # bstsm       = estimate(y, bstsm, [0.003 0.0009 5e-7], [], 'fmin', 'bfgs', 'disp', 'off');
 fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n" % (np.exp(2*opt_x[0]),np.exp(2*opt_x[1]),np.exp(2*opt_x[2])))
 
@@ -102,7 +102,7 @@ plt.show()
 #-- Adding explanatory variables and intervention to the model --#
 petrol   = seatbelt[[4],:]
 bstsmir  = ssm.model_cat([bstsm,ssm.model_intv(y.shape[1],'step',169),ssm.model_reg(petrol)])
-opt_x,logL  = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6]))[:2]
+opt_x,logL  = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2)[:2]
 
 alphahatir,Vir  = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[:2]
 irrir           = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[0]
@@ -152,25 +152,31 @@ plt.show()
 
 #-- Analysis of both front and rear seat passengers bivariate series --#
 y2  = seatbelt[1:3,:]
+n       = y2.shape[1]
+mis     = np.array(np.isnan(y2))
+anymis  = np.any(mis,0)
+allmis  = np.all(mis,0)
 
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
+bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
+opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
+Qirr  = ssm.f_psi_to_cov(2)(opt_x[:3])
+Qlvl  = ssm.f_psi_to_cov(2)(opt_x[3:6])
 
-# bibstsm         = ssm_mvstsm(2, [true true false], 'level', 'trig fixed', 12, false, seatbelt(4:5, :));
-# [bibstsm logL]  = estimate(y2(:, 1:169), bibstsm, [0.00531 0.0083 0.00441 0.000247 0.000229 0.000218], [], 'fmin', 'bfgs', 'disp', 'off');
-# fprintf(1, '[Parameters estimated w/o intervention on front and rear seat bivariate series]\n');
-# fprintf(1, 'Loglikelihood: %g.\n', logL);
-# fprintf(1, 'Irregular disturbance   Level disturbance\n');
-# fline   = '%-10.5g  %-10.5g  %-10.5g  %-10.5g\n';
-# fprintf(1, fline, bibstsm.param([1 3 4 6]));
-# fprintf(1, fline, bibstsm.param([3 2 6 5]));
-# fprintf(1, '\n');
+fout.write('[Parameters estimated w/o intervention on front and rear seat bivariate series]\n')
+fout.write("Loglikelihood: %g.\n" % logL)
+fout.write('Irregular disturbance   Level disturbance\n')
+fline   = "%-10.5g  %-10.5g  %-10.5g  %-10.5g\n"
+fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
+fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
+fout.write('\n')
 
-# alphahat    = statesmo(y2(:, 1:169), bibstsm);
-# comhat      = signal(alphahat, bibstsm);
-# lvlhat      = comhat(:, :, 1);
-# seashat     = comhat(:, :, 2);
-# reghat      = comhat(:, :, 3);
+alphahat    = ssm.statesmo_int(1,n,y2[:,:169],mis,anymis,allmis,ssm.set_param(bibstsm,opt_x))[0]
+comhat      = signal(alphahat, bibstsm, [0,1,12,14]);
+lvlhat      = comhat(:, :, 1);
+seashat     = comhat(:, :, 2);
+reghat      = comhat(:, :, 3);
 # figure('Name', 'Estimated components w/o intervention on front and rear seat bivariate series');
 # subplot(2, 2, 1), plot(time(1:169), lvlhat(1, :)+reghat(1, :)), hold all, scatter(time(1:169), y2(1, 1:169), 8, 'r', 's', 'filled'), hold off, title('Front seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([6 7.25]);
 # subplot(2, 2, 2), plot(time(1:169), lvlhat(1, :)), title('Front seat passenger level'), xlim([68 85]),% ylim([3.84 4.56]);
