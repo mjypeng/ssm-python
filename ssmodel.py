@@ -214,7 +214,7 @@ def model_seasonal(seasonal_type,s):
             'dynamic':  False,
             'constant': False,
             'shape': (s,s),
-            'func': lambda x: np.np.exp(2*x[0])*W,
+            'func': lambda x: np.exp(2*x[0])*W,
             'nparam': 1}
         c     = mat_const(np.zeros((s,1)))
         a1    = mat_const(np.zeros((s,1)))
@@ -458,13 +458,21 @@ def model_mvseasonal(p, cov, seasonal_type, s):
         P1  = mat_const(np.diag([np.inf]*(p*(s-1))))
     elif seasonal_type == 'h&s':
         # Multivariate H&S seasonal is always assumed independent
-        Z       = np.kron(np.eye(p),np.hstack([np.matrix(1),np.zeros((1,s-1))]))
-        T       = np.kron(np.eye(p),np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.matrix(1),np.zeros((1,s-1))]]))
-        R       = np.eye(p*s)
-
-#         [Q Qmmask]      = mat_wvar(p, s);
-#         [fun gra psi]   = fun_wvar(p, s, 'omega');
-#     elif seasonal_type == 'trig1':
+        Z   = np.kron(np.eye(p),np.hstack([np.matrix(1),np.zeros((1,s-1))]))
+        T   = np.kron(np.eye(p),np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.matrix(1),np.zeros((1,s-1))]]))
+        R   = np.eye(p*s)
+        W   = np.matrix(np.eye(s) - np.tile(1.0/s,(s,s)))
+        Q   = {
+            'gaussian': True,
+            'dynamic':  False,
+            'constant': False,
+            'shape': (s*p,)*2,
+            'func': lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W),
+            'nparam': p}
+        c   = mat_const(np.zeros((p*(s-1),)*2))
+        a1  = mat_const(np.zeros((p*(s-1),)*2))
+        P1  = mat_const(np.diag([np.inf]*(p*(s-1))))
+    elif seasonal_type == 'trig1':
 #         [Z T R]         = mat_mvtrig(p, s, false);
 #         [Q Qmmask]      = mat_dupvar(p, cov, s - 1);
 #         [fun gra psi]   = fun_dupvar(p, cov, s - 1, 'omega');
