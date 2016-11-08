@@ -1,0 +1,4 @@
+
+Loglikelihood = 1083.14, variance = 98.9992.
+epsilon variance = 15098.9, eta variance = 1469.07.
+
