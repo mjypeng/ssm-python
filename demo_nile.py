@@ -4,8 +4,7 @@ import sys
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import ssm_alg_int as ssa
-import ssm_model as ssm
+import ssmodel as ssm
 
 mpl.rcParams['figure.figsize'] = (16,10)
 SILENT_OUTPUT = bool(sys.argv[1] if len(sys.argv)>1 else 0)
@@ -27,20 +26,20 @@ time    = range(1871,1971)
 
 #-- Get information about data --#
 n       = y.shape[1]
-mis     = np.array(np.isnan(y))
+mis     = np.asarray(np.isnan(y))
 anymis  = np.any(mis,0)
 allmis  = np.all(mis,0)
 
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
 opt_x     = ssm.estimate(y,llm,np.log([10000,5000]))[0]
-logL,fvar = ssa.kalman_int(4,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+logL,fvar = ssm.kalman_int(4,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 
 fout.write("Loglikelihood = %g, variance = %g.\n" % (logL,fvar))
 fout.write("epsilon variance = %g, eta variance = %g.\n" % (np.exp(2*opt_x[0]),np.exp(2*opt_x[1])))
 
 #-- Kalman filtering --#
-a,P,d,v,invF  = ssa.kalman_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+a,P,d,v,invF  = ssm.kalman_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 # Build ndarrays from list output
 v   = np.array(np.concatenate(v,1))
 F   = np.concatenate([np.array(x[:,:,None]) for x in invF],2)**-1
@@ -88,7 +87,7 @@ else:
     plt.show()
 
 #-- State smoothing --#
-alphahat,V,r,N    = ssa.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+alphahat,V,r,N    = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 # Build ndarrays from list output
 r   = np.array(np.concatenate(r,1))
 N   = np.concatenate([np.array(x[:,:,None]) for x in N],2)
@@ -128,7 +127,7 @@ else:
     plt.show()
 
 #-- Disturbance smoothing --#
-epshat,etahat,epsvarhat,etavarhat = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+epshat,etahat,epsvarhat,etavarhat = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 # Reshape output for plotting
 epshat = epshat.squeeze()
 etahat = etahat.squeeze()
@@ -162,7 +161,7 @@ else:
 #-- Simulation smoothing --#
 NN = 5 if SILENT_OUTPUT else 1
 for ii in range(NN):
-    alphatilde,epstilde,etatilde,alphaplus = ssa.simsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+    alphatilde,epstilde,etatilde,alphaplus = ssm.simsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
     alphatilde  = alphatilde.squeeze()
     epstilde    = epstilde.squeeze()
     etatilde    = etatilde.squeeze()
@@ -206,8 +205,8 @@ n       = ymis.shape[1]
 mis     = np.array(np.isnan(ymis))
 anymis  = np.any(mis,0)
 allmis  = np.all(mis,0)
-amis,Pmis,dmis   = ssa.kalman_int(1,n,ymis,mis,anymis,allmis,ssm.set_param(llm,opt_x))[:3]
-alphahatmis,Vmis = ssa.statesmo_int(1,n,ymis,mis,anymis,allmis,ssm.set_param(llm,opt_x))[:2]
+amis,Pmis,dmis   = ssm.kalman_int(1,n,ymis,mis,anymis,allmis,ssm.set_param(llm,opt_x))[:3]
+alphahatmis,Vmis = ssm.statesmo_int(1,n,ymis,mis,anymis,allmis,ssm.set_param(llm,opt_x))[:2]
 amis[:,:dmis+1]   = np.nan
 Pmis[:,:,:dmis+1] = np.nan
 amis        = amis.squeeze()
@@ -249,7 +248,7 @@ n       = yforc.shape[1]
 mis     = np.array(np.isnan(yforc))
 anymis  = np.any(mis,0)
 allmis  = np.all(mis,0)
-aforc,Pforc,dforc,vforc,invFforc = ssa.kalman_int(1,n,yforc,mis,anymis,allmis,ssm.set_param(llm,opt_x))
+aforc,Pforc,dforc,vforc,invFforc = ssm.kalman_int(1,n,yforc,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 # Build ndarrays from list output
 vforc   = np.array(np.concatenate(vforc,1))
 Fforc   = np.concatenate([np.array(x[:,:,None]) for x in invFforc],2)**-1

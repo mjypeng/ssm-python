@@ -6,8 +6,7 @@ from scipy.linalg import sqrtm
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import ssm_alg_int as ssa
-import ssm_model as ssm
+import ssmodel as ssm
 
 mpl.rcParams['figure.figsize'] = (16,10)
 SILENT_OUTPUT = bool(sys.argv[1] if len(sys.argv)>1 else 0)
@@ -41,20 +40,20 @@ opt_x   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7]))[0]
 # bstsm       = estimate(y, bstsm, [0.003 0.0009 5e-7], [], 'fmin', 'bfgs', 'disp', 'off');
 fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n" % (np.exp(2*opt_x[0]),np.exp(2*opt_x[1]),np.exp(2*opt_x[2])))
 
-a,P,d,v,invF  = ssa.kalman_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
+a,P,d,v,invF  = ssm.kalman_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
 a[:,:d+1]     = np.nan
 P[:,:,:d+1]   = np.nan
 
-alphahat,V,r,N  = ssa.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
+alphahat,V,r,N  = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
 #-- Retrieve components --#
-ycom        = ssa.signal(a, bstsm, [0,1,12])
+ycom        = ssm.signal(a, bstsm, [0,1,12])
 lvl         = ycom[0,:].squeeze()
 seas        = ycom[1,:].squeeze()
-ycomhat     = ssa.signal(alphahat, bstsm, [0,1,12])
+ycomhat     = ssm.signal(alphahat, bstsm, [0,1,12])
 lvlhat      = ycomhat[0,:].squeeze()
 seashat     = ycomhat[1,:].squeeze()
 
-irr,etahat,epsvarhat,etavarhat = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
 irr       = irr.squeeze()
 epsvarhat = epsvarhat.squeeze()
 
@@ -84,7 +83,7 @@ plt.show()
 u       = irr/np.sqrt(epsvarhat)
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
-comres  = ssa.signal(r, bstsm, [0,1,12])
+comres  = ssm.signal(r, bstsm, [0,1,12])
 lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Residuals')
@@ -105,10 +104,10 @@ petrol   = seatbelt[[4],:]
 bstsmir  = ssm.model_cat([bstsm,ssm.model_intv(y.shape[1],'step',169),ssm.model_reg(petrol)])
 opt_x,logL  = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6]))[:2]
 
-alphahatir,Vir  = ssa.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[:2]
-irrir           = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[0]
+alphahatir,Vir  = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[:2]
+irrir           = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[0]
 irrir   = irrir.squeeze()
-ycomir  = ssa.signal(alphahatir, bstsmir, [0,1,12,13,14])
+ycomir  = ssm.signal(alphahatir, bstsmir, [0,1,12,13,14])
 lvlir   = np.sum(ycomir[[0,2,3],:],0).squeeze()
 seasir  = ycomir[1,:].squeeze()
 
@@ -135,10 +134,10 @@ plt.plot(time[:-1], irrir)
 plt.title('Irregular'); plt.ylim([-0.15,0.15])
 plt.show()
 
-irr,etahat,epsvarhat,etavarhat = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
-comres  = ssa.signal(r, bstsm, [0,1,12])
+comres  = ssm.signal(r, bstsm, [0,1,12])
 lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Estimated Components w/ intervention and regression')
