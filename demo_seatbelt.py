@@ -62,17 +62,13 @@ fig = plt.figure(num='Estimated Components')
 ax1 = plt.subplot(311)
 plt.plot(time[:-1], y.tolist()[0], 'r:', label='drivers')
 plt.plot(time[:-1], lvlhat, label='est. level')
-plt.title('Level')
-plt.ylim([6.875, 8])
-plt.legend()
+plt.title('Level'); plt.ylim([6.875, 8]); plt.legend()
 ax2 = plt.subplot(312)
 plt.plot(time[:-1], seashat)
-plt.title('Seasonal')
-plt.ylim([-0.16, 0.28])
+plt.title('Seasonal'); plt.ylim([-0.16, 0.28])
 ax3 = plt.subplot(313)
 plt.plot(time[:-1], irr)
-plt.title('Irregular')
-plt.ylim([-0.15, 0.15])
+plt.title('Irregular'); plt.ylim([-0.15, 0.15])
 
 plt.show()
 
@@ -80,8 +76,7 @@ fig = plt.figure(num='Data and level')
 plt.plot(time, lvl, label='filtered level')
 plt.plot(time[:-1], lvlhat, ':', label='smoothed level')
 plt.scatter(time[:-1], y.tolist()[0],c='r',marker='+', label='drivers')
-plt.ylim([6.95,7.9])
-plt.legend()
+plt.ylim([6.95,7.9]); plt.legend()
 
 plt.show()
 
@@ -95,19 +90,13 @@ lvlres  = comres[0,:].squeeze()
 fig = plt.figure(num='Residuals')
 ax1 = plt.subplot(311)
 plt.plot(time[:-1], np.asarray(y).squeeze() - lvl[:-1] - seas[:-1])
-plt.title('One-step ahead prediction residuals')
-plt.xlim([time[0],time[-2]])
-plt.ylim([-0.35,0.25])
+plt.title('One-step ahead prediction residuals'); plt.xlim([time[0],time[-2]]); plt.ylim([-0.35,0.25])
 ax2 = plt.subplot(312)
 plt.plot(time[:-1], u)
-plt.title('Auxiliary irregular residuals')
-plt.xlim([time[0],time[-2]])
-plt.ylim([-4.5,4.5])
+plt.title('Auxiliary irregular residuals'); plt.xlim([time[0],time[-2]]); plt.ylim([-4.5,4.5])
 ax3 = plt.subplot(313)
 plt.plot(time[:-1], lvlres)
-plt.title('Auxiliary level residuals')
-plt.xlim([time[0],time[-2]])
-plt.ylim([-2.5,1.5])
+plt.title('Auxiliary level residuals'); plt.xlim([time[0],time[-2]]); plt.ylim([-2.5,1.5])
 
 plt.show()
 
@@ -136,18 +125,14 @@ fig = plt.figure(num='Estimated Components w/ intervention and regression')
 plt.subplot(311)
 plt.plot(time[:-1], np.asarray(y).squeeze(), 'r:', label='drivers')
 plt.plot(time[:-1], lvlir, label='est. level')
-plt.title('Level')
-plt.ylim([6.875,8])
+plt.title('Level'); plt.xlim([time[0],time[-1]]); plt.ylim([6.875,8])
 plt.legend()
 plt.subplot(312)
 plt.plot(time[:-1], seasir)
-plt.title('Seasonal')
-plt.ylim([-0.16,0.28])
+plt.title('Seasonal'); plt.xlim([time[0],time[-1]]); plt.ylim([-0.16,0.28])
 plt.subplot(313)
 plt.plot(time[:-1], irrir)
-plt.title('Irregular')
-plt.ylim([-0.15,0.15])
-
+plt.title('Irregular'); plt.ylim([-0.15,0.15])
 plt.show()
 
 irr,etahat,epsvarhat,etavarhat = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))
@@ -158,38 +143,20 @@ lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Estimated Components w/ intervention and regression')
 ax1 = plt.subplot(211)
-plt.plot(time[:-1], np.asarray(y).squeeze(), 'r-.', label='drivers')
-plt.plot(time[:-1], lvlir, label='est. level')
-plt.title('Level')
-plt.xlim([time[0],time[-1]])
-plt.ylim([6.875,8])
-ax2 = plt.subplot(212)
-plt.plot(time[:-1], seasir)
-plt.title('Seasonal')
-plt.xlim([time[0],time[-1]])
-plt.ylim([-0.16,0.28])
-
-plt.show()
-
-fig = plt.figure(num='Estimated Components w/ intervention and regression')
-ax1 = plt.subplot(211)
 plt.plot(time[:-1], irrir)
-plt.title('Irregular')
-plt.xlim([time[0],time[-1]])
-plt.ylim([-0.15,0.15])
+plt.title('Irregular'); plt.xlim([time[0],time[-1]]); plt.ylim([-0.15,0.15])
 ax2 = plt.subplot(212)
 plt.plot(time[:-1], lvlres)
-plt.title('Normalized level residuals')
-plt.xlim([time[0],time[-1]])
-plt.ylim([-1.5,1])
+plt.title('Normalized level residuals'); plt.xlim([time[0],time[-1]]); plt.ylim([-1.5,1])
 
 plt.show()
 
 #-- Analysis of both front and rear seat passengers bivariate series --#
 y2  = seatbelt[1:3,:]
 
-# % Bivariate basic structural time series model with regression variables
-# % petrol and kilometer travelled, before intervention
+#-- Bivariate basic structural time series model with regression variables --#
+# petrol and kilometer travelled, before intervention
+
 # bibstsm         = ssm_mvstsm(2, [true true false], 'level', 'trig fixed', 12, false, seatbelt(4:5, :));
 # [bibstsm logL]  = estimate(y2(:, 1:169), bibstsm, [0.00531 0.0083 0.00441 0.000247 0.000229 0.000218], [], 'fmin', 'bfgs', 'disp', 'off');
 # fprintf(1, '[Parameters estimated w/o intervention on front and rear seat bivariate series]\n');

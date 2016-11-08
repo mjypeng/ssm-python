@@ -31,6 +31,23 @@ def mat_const(mat):
         'shape': mat[0].shape + (len(mat),) if type(mat) == list else mat.shape,
         'mat': mat}
 
+def f_psi_to_cov(p):
+    # Returns a function that generates a (full) covariance matrix from a standard parametrization vector psi
+    #   The covariance matrix is (p, p)
+    #   The expected parameter vector psi is (p*(p+1)/2,)
+    mask  = nonzero(tril(ones((p,p),dtype=bool) & ~eye(p,dtype=bool)))
+    def psi_to_cov(x):
+        # bound variables: p,mask
+        x1  = asarray(x[:p])
+        x2  = asarray(x[p:])
+        Y   = exp(x1)[:,None].T
+        Y   = Y.T * Y
+        C   = zeros((p,p))
+        C[mask] = Y[mask] * (x2/sqrt(1 + x2**2))
+        C   = C + C.T + diag(diag(Y))
+        return matrix(C)
+    return psi_to_cov
+
 def mat_var(p=1,cov=True):
     # Create a parametrized normal covariance matrix for use as state space matrix
     #   p is the number of variables.
@@ -54,25 +71,66 @@ def mat_var(p=1,cov=True):
             'func': lambda x: matrix(diag(exp(2*asarray(x)))),
             'nparam': p}
     else:
-        mask  = nonzero(tril(ones((p,p),dtype=bool) & ~eye(p,dtype=bool)))
-        def x_to_cov(x):
-            # bound variables: p,mask
-            x1  = asarray(x[:p])
-            x2  = asarray(x[p:])
-            Y   = exp(x1)[:,None].T
-            Y   = Y.T * Y
-            C   = zeros((p,p))
-            C[mask] = Y[mask] * (x2/sqrt(1 + x2**2))
-            C   = C + C.T + diag(diag(Y))
-            return matrix(C)
-
         return {
             'gaussian': True,
             'dynamic':  False,
             'constant': False,
             'shape': (p,p),
-            'func': x_to_cov,
+            'func': f_psi_to_cov(p),
             'nparam': p*(p+1)/2}
+
+def mat_interlvar(p, q, cov):
+    # %MAT_INTERLVAR Create base matrices for q-interleaved variance noise.
+    # %   [m mmask] = MAT_INTERLVAR(p, q, cov)
+    # %       p is the number of variables.
+    # %       q is the number of variances affecting each variable.
+    # %       cov is a logical vector that specifies whether each q variances covary
+    # %           across variables. shape = (q,)
+    # %       The variances affecting any single given variable is always assumed to be
+    # %           independent.
+
+    if p == 1: return mat_var(q, False)
+
+    mask   = nonzero(tril(ones((p,p),dtype=bool) & ~eye(p,dtype=bool))) # mask for a single full covariance matrix
+    Vmask  = [None]*q # individual masks into the whole interleaved variance matrix for each of the q variances
+    nparam = 0
+    for j in range(q):
+        emask       = zeros((q,q),dtype=bool)
+        emask[j,j]  = True
+        Vmask[j]    = kron(ones((p,p),dtype=bool) if cov[j] else eye(p,dtype=bool), emask)
+        nparam     += p*(p+1)/2 if cov[j] else p
+
+    def psi_to_interlvar(x):
+        # bound variables: p, q, cov, mask, Vmask
+        i  = 0 # pointer into x
+        V  = zeros((p*q,)*2)
+        for j in range(q):
+            if cov[j]:
+                xj  = x[i : i + (p*(p+1)/2)]
+                i  += p*(p+1)/2
+                # Generate the covariance matrix for the qth variance across all p variables
+                x1  = asarray(xj[:p])
+                x2  = asarray(xj[p:])
+                Y   = exp(x1)[:,None].T
+                Y   = Y.T * Y
+                C   = zeros((p,p))
+                C[mask] = Y[mask] * (x2/sqrt(1 + x2**2))
+                Vj  = C + C.T + diag(diag(Y))
+            else:
+                xj  = x[i : i + p]
+                i  += p
+                Vj  = diag(exp(2*asarray(xj)))
+            V[Vmask[j]]  = Vj
+
+        return V
+
+    return {
+        'gaussian': True,
+        'dynamic':  False,
+        'constant': False,
+        'shape': (p*q,)*2,
+        'func': psi_to_interlvar,
+        'nparam': nparam}
 
 def set_param(model,x):
     # The model is modified inplace, but reference returned for convenience
@@ -346,3 +404,110 @@ def mat_cat(M,mats):
         M['func']   = mcat_func
         M['nparam'] = nparam
     return M
+
+def model_mvllm(p, cov=(True,True)):
+    # %SSM_MVLLM Create SSMODEL object for multivariate local level model.
+    # %   model = SSM_MVLLM(p[, cov])
+    # %       p is the number of variables.
+    # %       cov specifies complete covariance if true, or complete independence if
+    # %           false, cov[0] for observation disturbance, cov[1] for state transition disturbance
+    #   Each of the p variables evolve independently, as indicated by identity matrices for Z,T,R, so the only source of dependence is in the disturbances. Hence it does not make much sense to have cov all False, since it is equivalent to running p local linear models separately.
+    return {
+        'H':  mat_var(p, cov[0]),
+        'Z':  mat_const(eye(p)),
+        'T':  mat_const(eye(p)),
+        'R':  mat_const(eye(p)),
+        'Q':  mat_var(p, cov[1]),
+        'c':  mat_const(zeros((p,1))),
+        'a1': mat_const(zeros((p,1))),
+        'P1': mat_const(diag([inf]*p))}
+
+def model_mvllt(p, cov=(True,True,True)):
+    # %SSM_MVLLT Create SSMODEL object for multivariate local level trend model.
+    # %   model = SSM_MVLLT(p[, cov])
+    # %       p is the number of variables.
+    # %       cov specifies complete covariance if true, or complete independence if
+    # %           false, extended to a vector where needed.
+    return {
+        'H':  mat_var(p, cov[0]),
+        'Z':  mat_const(kron(eye(p), [1,0])),
+        'T':  mat_const(kron(eye(p), [[1,1],[0,1]])),
+        'R':  mat_const(eye(p*2)),
+        'Q':  mat_interlvar(p, 2, cov[1:]),
+        'c':  mat_const(zeros((p*2,1))),
+        'a1': mat_const(zeros((p*2,1))),
+        'P1': mat_const(diag([inf]*(p*2)))}
+
+def model_mvseasonal(p, cov, seasonal_type, s):
+    # %SSM_MVSEASONAL Create SSMODEL object for multivariate seasonal component.
+    # %   model = SSM_MVSEASONAL(p, cov, seasonal_type, s)
+    # %       p is the number of variables.
+    # %       cov specifies complete covariance if true, or complete independence if
+    # %           false
+
+    H  = mat_var(1)
+    if seasonal_type == 'dummy':
+        Z   = kron(eye(p),hstack([matrix(1),zeros((1,s-2))]))
+        T   = kron(eye(p),vstack([-ones((1,s-1)),hstack([eye(s-2),zeros((s-2,1))])]))
+        R   = kron(eye(p),vstack([matrix(1),zeros((s-2,1))]))
+        Q   = mat_var(p, cov)
+        c   = mat_const(zeros((p*(s-1),)*2))
+        a1  = mat_const(zeros((p*(s-1),)*2))
+        P1  = mat_const(diag([inf]*(p*(s-1))))
+    elif seasonal_type == 'dummy fixed':
+        Z   = kron(eye(p),hstack([matrix(1),zeros((1,s-2))]))
+        T   = kron(eye(p),vstack([-ones((1,s-1)),hstack([eye(s-2),zeros((s-2,1))])]))
+        R   = zeros((p*(s-1),0))
+        Q   = mat_const(zeros((0,0)))
+        c   = mat_const(zeros((p*(s-1),)*2))
+        a1  = mat_const(zeros((p*(s-1),)*2))
+        P1  = mat_const(diag([inf]*(p*(s-1))))
+    elif seasonal_type == 'h&s':
+        # Multivariate H&S seasonal is always assumed independent
+        [Z T R]         = mat_mvhs(p, s);
+        [Q Qmmask]      = mat_wvar(p, s);
+        [fun gra psi]   = fun_wvar(p, s, 'omega');
+    elif seasonal_type == 'trig1':
+        [Z T R]         = mat_mvtrig(p, s, false);
+        [Q Qmmask]      = mat_dupvar(p, cov, s - 1);
+        [fun gra psi]   = fun_dupvar(p, cov, s - 1, 'omega');
+    elif seasonal_type == 'trig2':
+        [Z T R]         = mat_mvtrig(p, s, false);
+        [Q Qmmask]      = mat_interlvar(p, s - 1, cov);
+        [fun gra psi]   = fun_interlvar(p, s - 1, cov, 'omega');
+    elif seasonal_type == 'trig fixed':
+        [Z T R]         = mat_mvtrig(p, s, true);
+        Q               = [];
+        fun             = {};
+
+if isempty(fun), model = [ssm_null(p) ssmodel(struct('type', 'multivariate seasonal', 'p', p, 'subtype', type, 's', s), zeros(p), Z, T, R, Q)];
+else model = [ssm_null(p) ssmodel(struct('type', 'multivariate seasonal', 'p', p, 'subtype', type, 's', s), zeros(p), Z, T, R, ssmat(Q, Qmmask), 'Q', fun, gra, psi)];
+end
+
+
+
+def model_mvstsm(p, cov, lvl, seas, s, cycle=False, x=None):
+    # %SSM_MVSTSM Create SSMODEL object for multivariate structural time series models.
+    # %   model = SSM_MVSTSM(p, cov, lvl, seas, s[, cycle, x, dep (?)])
+    # %       p is the number of variables.
+    # %       cov specifies complete covariance if true, or complete independence if
+    # %           false, extended to a vector where needed.
+
+    if lvl == 'level':
+        model1 = model_mvllm(p, cov[:2]); cov = cov[2:]
+    elif lvl == 'trend':
+        model1 = model_mvllt(p, cov[:3]); cov = cov[3:]
+    else:
+        model1 = {
+            'H': mat_var(p,cov[0]),
+            'Z': mat_const(zeros((p,0))),
+            'T': mat_const(zeros((0,0))),
+            'R': mat_const(zeros((0,0))),
+            'Q': mat_const(zeros((0,0))),
+            'c': mat_const(zeros((0,1))),
+            'a1': mat_const(zeros((0,1))),
+            'P1': mat_const(zeros((0,0)))}; cov = cov[1:]
+
+    # model   = [lvl ssm_mvseasonal(p, cov(k), seas, s)];
+    # if cycle, model = [model ssm_mvcycle(p, cov(k+1))]; end
+    # if nargin >= 7, model = [model ssm_mvreg(p, varargin{:})]; end
