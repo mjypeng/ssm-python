@@ -43,7 +43,7 @@ def mat_var(p=1,cov=True):
             'dynamic':  False,
             'constant': False,
             'shape': (1,1),
-            'func': lambda x: asmatrix(exp(2*asarray(x))),
+            'func': lambda x: asmatrix(exp(2*x[0])),
             'nparam': 1}
     elif not cov:
         return {

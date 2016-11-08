@@ -88,7 +88,7 @@ plt.show()
 #-- Calculate standardized residuals --#
 u       = irr/np.sqrt(epsvarhat)
 r       = np.zeros((12,y.shape[1]))
-for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*np.asmatrix(etahat)[:,t]
+for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
 comres  = ssa.signal(r, bstsm, [0,1,12])
 lvlres  = comres[0,:].squeeze()
 
@@ -150,20 +150,43 @@ plt.ylim([-0.15,0.15])
 
 plt.show()
 
-# % [irr etahat epsvarhat etavarhat] = disturbsmo(y, bstsmir);
-# % r       = zeros(12, size(y, 2));
-# % for t = 1:size(y, 2), r(:, t) = inv(sqrtm(etavarhat(:,:, t)))*etahat(:, t); end
-# % comres  = signal(r, bstsm);
-# % lvlres  = comres(1, :);
-# % figure('Name', 'Estimated Components w/ intervention and regression');
-# % subplot(2, 1, 1), plot(time(1:end-1), y, 'r-.', 'DisplayName', 'drivers'), hold all, plot(time(1:end-1), lvlir, 'DisplayName', 'est. level'), hold off, title('Level'), xlim([68 86]), ylim([6.875 8]);
-# % subplot(2, 1, 2), plot(time(1:end-1), seasir), title('Seasonal'), xlim([68 86]), ylim([-0.16 0.28]);
-# % figure('Name', 'Estimated Components w/ intervention and regression');
-# % subplot(2, 1, 1), plot(time(1:end-1), irrir), title('Irregular'), xlim([68 86]), ylim([-0.15 0.15]);
-# % subplot(2, 1, 2), plot(time(1:end-1), lvlres), title('Normalized level residuals'), xlim([68 86]), ylim([-1.5 1]);
+irr,etahat,epsvarhat,etavarhat = ssa.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))
+r       = np.zeros((12,y.shape[1]))
+for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
+comres  = ssa.signal(r, bstsm, [0,1,12])
+lvlres  = comres[0,:].squeeze()
 
-# %% Analysis of both front and rear seat passengers bivariate series %%
-# y2          = seatbelt(2:3, :);
+fig = plt.figure(num='Estimated Components w/ intervention and regression')
+ax1 = plt.subplot(211)
+plt.plot(time[:-1], np.asarray(y).squeeze(), 'r-.', label='drivers')
+plt.plot(time[:-1], lvlir, label='est. level')
+plt.title('Level')
+plt.xlim([time[0],time[-1]])
+plt.ylim([6.875,8])
+ax2 = plt.subplot(212)
+plt.plot(time[:-1], seasir)
+plt.title('Seasonal')
+plt.xlim([time[0],time[-1]])
+plt.ylim([-0.16,0.28])
+
+plt.show()
+
+fig = plt.figure(num='Estimated Components w/ intervention and regression')
+ax1 = plt.subplot(211)
+plt.plot(time[:-1], irrir)
+plt.title('Irregular')
+plt.xlim([time[0],time[-1]])
+plt.ylim([-0.15,0.15])
+ax2 = plt.subplot(212)
+plt.plot(time[:-1], lvlres)
+plt.title('Normalized level residuals')
+plt.xlim([time[0],time[-1]])
+plt.ylim([-1.5,1])
+
+plt.show()
+
+#-- Analysis of both front and rear seat passengers bivariate series --#
+y2  = seatbelt[1:3,:]
 
 # % Bivariate basic structural time series model with regression variables
 # % petrol and kilometer travelled, before intervention

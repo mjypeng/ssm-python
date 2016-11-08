@@ -33,7 +33,7 @@ allmis  = np.all(mis,0)
 
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
-opt_x     = ssm.estimate(y,llm,np.log([10000,5000]))
+opt_x     = ssm.estimate(y,llm,np.log([10000,5000]))[0]
 logL,fvar = ssa.kalman_int(4,n,y,mis,anymis,allmis,ssm.set_param(llm,opt_x))
 
 fout.write("Loglikelihood = %g, variance = %g.\n" % (logL,fvar))
