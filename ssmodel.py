@@ -2,7 +2,6 @@
 
 from ssalg import *
 from scipy.linalg import block_diag as blkdiag
-from scipy.optimize import minimize
 
 def x_intv(n, intv_type, tau):
     # %X_INTV Create regression variables for intervention components.
@@ -166,16 +165,6 @@ def mat_interlvar(p, q, cov):
         'shape': (p*q,)*2,
         'func': psi_to_interlvar,
         'nparam': nparam}
-
-def set_param(model,x):
-    # The model is modified inplace, but reference returned for convenience
-    i  = 0
-    for M in ('H','Z','T','R','Q','c'):
-        if not model[M]['constant']:
-            nparam  = model[M]['nparam']
-            model[M]['mat'] = model[M]['func'](x[i:i+nparam])
-            i  += nparam
-    return model
 
 def validate_model(model):
     MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')

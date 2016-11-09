@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+from scipy.optimize import minimize
 
 DEFAULT_TOL = 10**-7
 
 def prepare_data(y):
     # y is a 2D matrix n*p, missing data is currently not supported for 3D (batch mode)
-    n,p     = y.shape
+    p,n     = y.shape
     mis     = np.asarray(np.isnan(y))
     anymis  = np.any(mis,0)
     allmis  = np.all(mis,0)
@@ -29,7 +30,7 @@ def prepare_model(model,n):
     stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
     return H, Z, T, R, Q, c, a1, P1, stationary, RQdyn
 
-def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol=DEFAULT_TOL, log_diag=False):
+def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol,log_diag=False):
     # mode:
     #   0 - all output.
     #   1 - Kalman filter.
@@ -231,7 +232,7 @@ def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol
     elif mode == 3: # disturbance smoother
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_RQ,Result_QRt
     elif mode == 4: # loglikelihood
-        output = Result_logL_+Result_var_[0,0],Result_var_[0,0]
+        output = Result_logL_+np.asmatrix(Result_var_)[0,0],np.asmatrix(Result_var_)[0,0]
     elif mode == 5: # fast smoother
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_L1,Result_QRt
     elif mode == 6: # fast state smoother
@@ -261,15 +262,37 @@ def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
 
     return a, P, v, F
 
-def estimate(y,model,x0,method=None):
+def loglik(y,model,tol=DEFAULT_TOL):
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    nmis    = n - np.sum(allmis)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
+    #-- Calculate loglikelihood --#
+    _logL,_fvar = _kalman(4,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=False)
+    logL        = -(nmis*p*np.log(2*np.pi) + _logL) / 2
+    fvar        = _fvar / (n*p - np.sum(P1 == np.inf))
+
+    return logL, fvar
+
+def set_param(model,x):
+    # The model is modified inplace, but reference returned for convenience
+    i  = 0
+    for M in ('H','Z','T','R','Q','c'):
+        if not model[M]['constant']:
+            nparam  = model[M]['nparam']
+            model[M]['mat'] = model[M]['func'](x[i:i+nparam])
+            i  += nparam
+    return model
+
+def estimate(y,model,x0,method=None,tol=DEFAULT_TOL):
     #-- Prepare state space matrices and data --#
     n, p, y, mis, anymis, allmis  = prepare_data(y)
     nmis    = n - sum(allmis)
-    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
     w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
 
     #-- Estimate model parameters --#
-    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=False)[0]
+    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
 
     res     = minimize(nloglik,x0,method=method)
     logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
@@ -367,6 +390,9 @@ def statesmo(mode,y,model,tol=DEFAULT_TOL):
     if mode == 0: # all output
         return L,P,alphahat,V,Result_r,Result_N
     elif mode == 1: # state smoother
+        # Build ndarrays from list output
+        Result_r   = np.array(np.concatenate(Result_r,1))
+        Result_N   = np.concatenate([np.array(x[:,:,None]) for x in Result_N],2)
         return alphahat,V,Result_r,Result_N
     elif mode == 2: # ARMA EM
         return L,P,alphahat,V,Result_N
@@ -435,7 +461,7 @@ def disturbsmo(mode,y,model,tol=DEFAULT_TOL):
 
     if mode in (0,1):
         #-- Kalman filter --#
-        d,Fns,v,invF,K,L,RQ,QRt = kalman_int(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
+        d,Fns,v,invF,K,L,RQ,QRt = _kalman(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
 
         #-- Disturbance smoothing backwards recursion --#
         m   = model['a1']['shape'][0]
@@ -550,7 +576,7 @@ def _sample(N,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn):
 
     return y,alpha,eps,eta
 
-def _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFAULT_TOL):
+def _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol):
     #   No state space matrices would be modified by _fastsmo
 
     #-- Kalman filter --#
@@ -604,7 +630,7 @@ def _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFA
 
     return alphahat,epshat,etahat
 
-def _batchkalman(mode,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFAULT_TOL):
+def _batchkalman(mode,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol):
     # mode:
     #   0 - all output.
     #   1 - Kalman filter.
@@ -753,16 +779,17 @@ def _batchkalman(mode,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFAULT_TOL):
     elif mode == 4: # fast disturbance smoother
         return d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_QRt
 
-def _batchsmo(mode,n,N,y,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol=DEFAULT_TOL):
+def _batchsmo(mode,n,N,y,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol):
     # y is (p, N, n)
     # alphahat is (m, N, n)
     # epshat is (p, N, n)
     # etahat is (r, N, n)
     # mode 0: return alphahat,epshat,etahat,Result_r
     # mode 1: return alphahat,epshat,etahat
+    #   This routine does not modify any data or state space matrices
 
     #-- Prepare state space matrices --#
-    c   = [np.tile(c[t],(1,N)) for t in range(n)] if model['c']['dynamic'] else [np.tile(c[0],(1,N))]*n
+    c   = [np.tile(c[t],(1,N)) for t in range(n)] if cdyn else [np.tile(c[0],(1,N))]*n
 
     #-- Kalman filter --#
     d,Fns,v,invF,K,L,L1,QRt = _batchkalman(2,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol)
@@ -806,7 +833,7 @@ def _batchsmo(mode,n,N,y,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol=DEFAULT_T
     elif mode == 1:
         return alphahat,epshat,etahat
 
-def simsmo_int(N,y,model,antithetic=1,tol=DEFAULT_TOL):
+def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
     # function [alphatilde epstilde etatilde alphaplus] = simsmo(y, model, N, varargin)
     # Znl     = isa(model.Z, 'ssfunc');
     # Tnl     = isa(model.T, 'ssfunc');

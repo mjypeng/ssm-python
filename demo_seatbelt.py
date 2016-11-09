@@ -28,32 +28,24 @@ time     = pd.date_range(pd.to_datetime('19690101'),pd.to_datetime('19850101'),f
 
 #-- Analysis of drivers series --#
 y       = seatbelt[[0],:]
-n       = y.shape[1]
-mis     = np.array(np.isnan(y))
-anymis  = np.any(mis,0)
-allmis  = np.all(mis,0)
 
 #-- Estimation of basic structural time series model --#
-bstsm   = ssm.model_stsm('level', 'trig1', 12)
-# bstsm   = ssm.model_cat([ssm.model_llm(),ssm.model_seasonal('trig1', 12)])
+bstsm   = ssm.model_stsm('level', 'trig1', 12) #ssm.model_cat([ssm.model_llm(),ssm.model_seasonal('trig1', 12)])
 opt_x   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2)[0]
-# bstsm       = estimate(y, bstsm, [0.003 0.0009 5e-7], [], 'fmin', 'bfgs', 'disp', 'off');
-fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n" % (np.exp(2*opt_x[0]),np.exp(2*opt_x[1]),np.exp(2*opt_x[2])))
+bstsm 	= ssm.set_param(bstsm, opt_x)
+fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n\n" % (bstsm['H']['mat'][0,0],bstsm['Q']['mat'][0,0],bstsm['Q']['mat'][1,1]))
 
-a,P,d,v,invF  = ssm.kalman_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
-a[:,:d+1]     = np.nan
-P[:,:,:d+1]   = np.nan
-
-alphahat,V,r,N  = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
+a,P,v,F         = ssm.kalman(y,bstsm)
+alphahat,V,r,N  = ssm.statesmo(1,y,bstsm)
 #-- Retrieve components --#
-ycom        = ssm.signal(a, bstsm, [0,1,12])
+ycom        = ssm.signal(a, bstsm, [1,11])
 lvl         = ycom[0,:].squeeze()
 seas        = ycom[1,:].squeeze()
-ycomhat     = ssm.signal(alphahat, bstsm, [0,1,12])
+ycomhat     = ssm.signal(alphahat, bstsm, [1,11])
 lvlhat      = ycomhat[0,:].squeeze()
 seashat     = ycomhat[1,:].squeeze()
 
-irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsm,opt_x))
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(1,y,bstsm)
 irr       = irr.squeeze()
 epsvarhat = epsvarhat.squeeze()
 
@@ -69,7 +61,11 @@ ax3 = plt.subplot(313)
 plt.plot(time[:-1], irr)
 plt.title('Irregular'); plt.ylim([-0.15, 0.15])
 
-plt.show()
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out01.png')
+    plt.close()
+else:
+    plt.show()
 
 fig = plt.figure(num='Data and level')
 plt.plot(time, lvl, label='filtered level')
@@ -77,13 +73,17 @@ plt.plot(time[:-1], lvlhat, ':', label='smoothed level')
 plt.scatter(time[:-1], y.tolist()[0],c='r',marker='+', label='drivers')
 plt.ylim([6.95,7.9]); plt.legend()
 
-plt.show()
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out02.png')
+    plt.close()
+else:
+    plt.show()
 
 #-- Calculate standardized residuals --#
 u       = irr/np.sqrt(epsvarhat)
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
-comres  = ssm.signal(r, bstsm, [0,1,12])
+comres  = ssm.signal(r, bstsm, [1,11])
 lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Residuals')
@@ -97,25 +97,30 @@ ax3 = plt.subplot(313)
 plt.plot(time[:-1], lvlres)
 plt.title('Auxiliary level residuals'); plt.xlim([time[0],time[-2]]); plt.ylim([-2.5,1.5])
 
-plt.show()
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out03.png')
+    plt.close()
+else:
+    plt.show()
 
 #-- Adding explanatory variables and intervention to the model --#
 petrol   = seatbelt[[4],:]
 bstsmir  = ssm.model_cat([bstsm,ssm.model_intv(y.shape[1],'step',169),ssm.model_reg(petrol)])
 opt_x,logL  = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2)[:2]
+bstsmir  = ssm.set_param(bstsmir, opt_x)
 
-alphahatir,Vir  = ssm.statesmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[:2]
-irrir           = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))[0]
+alphahatir,Vir  = ssm.statesmo(1,y,bstsmir)[:2]
+irrir           = ssm.disturbsmo(1,y,bstsmir)[0]
 irrir   = irrir.squeeze()
-ycomir  = ssm.signal(alphahatir, bstsmir, [0,1,12,13,14])
+ycomir  = ssm.signal(alphahatir, bstsmir, [1,11,1,1])
 lvlir   = np.sum(ycomir[[0,2,3],:],0).squeeze()
 seasir  = ycomir[1,:].squeeze()
 
 fout.write('[Analysis on drivers series]\n')
 fout.write("Loglikelihood: %g\n" % logL)
-fout.write("Irregular variance: %g\n" % np.exp(opt_x[0]))
-fout.write("Level variance: %g\n" % np.exp(opt_x[1]))
-fout.write("Seasonal variance: %g\n" % np.exp(opt_x[2]))
+fout.write("Irregular variance: %g\n" % bstsmir['H']['mat'][0,0])
+fout.write("Level variance: %g\n" % bstsmir['Q']['mat'][0,0])
+fout.write("Seasonal variance: %g\n" % bstsmir['Q']['mat'][1,1])
 fout.write('Variable             Coefficient     R. m. s. e.     t-value\n')
 fout.write("petrol coefficient   %-14.5g  %-14.5g  %g\n" % (alphahatir[-1,0],np.sqrt(Vir[-1,-1,-1]),alphahatir[-1,0]/np.sqrt(Vir[-1,-1,-1])))
 fout.write("level shift at 83.2  %-14.5g  %-14.5g  %g\n\n" % (alphahatir[-2,0],np.sqrt(Vir[-2,-2,-1]),alphahatir[-2,0]/np.sqrt(Vir[-2,-2,-1])))
@@ -132,12 +137,17 @@ plt.title('Seasonal'); plt.xlim([time[0],time[-1]]); plt.ylim([-0.16,0.28])
 plt.subplot(313)
 plt.plot(time[:-1], irrir)
 plt.title('Irregular'); plt.ylim([-0.15,0.15])
-plt.show()
 
-irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo_int(1,n,y,mis,anymis,allmis,ssm.set_param(bstsmir,opt_x))
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out04.png')
+    plt.close()
+else:
+    plt.show()
+
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(1,y,bstsmir)
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
-comres  = ssm.signal(r, bstsm, [0,1,12])
+comres  = ssm.signal(r, bstsm, [1,11])
 lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Estimated Components w/ intervention and regression')
@@ -148,7 +158,11 @@ ax2 = plt.subplot(212)
 plt.plot(time[:-1], lvlres)
 plt.title('Normalized level residuals'); plt.xlim([time[0],time[-1]]); plt.ylim([-1.5,1])
 
-plt.show()
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out05.png')
+    plt.close()
+else:
+    plt.show()
 
 #-- Analysis of both front and rear seat passengers bivariate series --#
 y2  = seatbelt[1:3,:]
@@ -156,8 +170,8 @@ y2  = seatbelt[1:3,:]
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
 bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
-opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([1,1,0.5,0.2,0.2,0.1])/2,method=None)[:2]
-# opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2,method=None)[:2]
+opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2]
+# opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
 bibstsm    = ssm.set_param(bibstsm,opt_x)
 Qirr  = bibstsm['H']['mat']
 Qlvl  = bibstsm['Q']['mat']
@@ -170,9 +184,8 @@ fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
 fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('\n')
 
-mis,anymis,allmis = ssm.get_missing(y2[:,:169])
-alphahat    = ssm.statesmo_int(1,169,y2[:,:169],mis,anymis,allmis,bibstsm)[0]
-comhat      = ssm.signal(alphahat, bibstsm, [0,2,24,28])
+alphahat    = ssm.statesmo(1,y2[:,:169],bibstsm)[0]
+comhat      = ssm.signal(alphahat, bibstsm, [2,22,4])
 lvlhat      = comhat[:,:,0]
 seashat     = comhat[:,:,1]
 reghat      = comhat[:,:,2]
@@ -181,29 +194,25 @@ fig  = plt.figure(num='Estimated components w/o intervention on front and rear s
 ax1  = plt.subplot(221)
 plt.plot(time[:169], lvlhat[0,:]+reghat[0,:])
 plt.scatter(time[:169], y2[0,:169], 8, 'r', 's', 'filled')
-plt.title('Front seat passenger level (w/o seasonal)')
-plt.xlim([time[0],time[168]])
-plt.ylim([6,7.25])
+plt.title('Front seat passenger level (w/o seasonal)'); plt.xlim([time[0],time[168]]); plt.ylim([6,7.25])
 ax2  = plt.subplot(222)
 plt.plot(time[:169], lvlhat[0,:])
-plt.title('Front seat passenger level')
-plt.xlim([time[0],time[168]])
-# plt.ylim([3.84,4.56])
+plt.title('Front seat passenger level'); plt.xlim([time[0],time[168]]); # plt.ylim([3.84,4.56])
 ax3  = plt.subplot(223)
 plt.plot(time[:169], lvlhat[1,:]+reghat[1,:])
 plt.scatter(time[:169], y2[1,:169], 8, 'r', 's', 'filled')
-plt.title('Rear seat passenger level (w/o seasonal)')
-plt.xlim([time[0],time[168]])
-plt.ylim([5.375,6.5])
+plt.title('Rear seat passenger level (w/o seasonal)'); plt.xlim([time[0],time[168]]); plt.ylim([5.375,6.5])
 ax4  = plt.subplot(224)
 plt.plot(time[:169], lvlhat[1,:])
-plt.title('Rear seat passenger level')
-plt.xlim([time[0],time[168]])
-# plt.ylim([1.64,1.96])
+plt.title('Rear seat passenger level'); plt.xlim([time[0],time[168]]); # plt.ylim([1.64,1.96])
 
-plt.show()
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out06.png')
+    plt.close()
+else:
+    plt.show()
 
-# % Add intervention to both series
+#-- Add intervention to both series --#
 # bibstsm2i           = [bibstsm ssm_mvintv(2, size(y2, 2), 'step', 170)];
 # [bibstsm2i logL2i]  = estimate(y2, bibstsm2i, [0.0054 0.00857 0.00445 0.000256 0.000232 0.000225], [], 'fmin', 'bfgs', 'disp', 'off');
 # [alphahat2i V2i]    = statesmo(y2, bibstsm2i);
