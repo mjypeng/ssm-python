@@ -24,12 +24,6 @@ fout.write('\n')
 y       = np.loadtxt('data/nile.dat')[:,None].T
 time    = range(1871,1971)
 
-#-- Get information about data --#
-n       = y.shape[1]
-mis     = np.asarray(np.isnan(y))
-anymis  = np.any(mis,0)
-allmis  = np.all(mis,0)
-
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
 opt_x     = ssm.estimate(y,llm,np.log([10000,5000])/2,method='Nelder-Mead')[0]

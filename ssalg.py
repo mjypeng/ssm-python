@@ -4,20 +4,32 @@ import numpy as np
 
 DEFAULT_TOL = 10**-7
 
-def get_missing(y):
+def prepare_data(y):
     # y is a 2D matrix n*p, missing data is currently not supported for 3D (batch mode)
+    n,p     = y.shape
     mis     = np.asarray(np.isnan(y))
     anymis  = np.any(mis,0)
     allmis  = np.all(mis,0)
-    return mis,anymis,allmis
+    y       = np.asmatrix(y) # asmatrix may or may not make a copy
+    return n, p, y, mis, anymis, allmis
 
-def copy_mat(M,n):
-    # Get a copy of state space matrix for state space algorithms
-    return [M['mat'][t].copy() for t in range(n)] if M['dynamic'] else [M['mat'].copy()]*n
+def prepare_mat(M,n):
+    return M['mat'] if M['dynamic'] else [M['mat']]*n
 
-def _kalman(mode, n,y,mis,anymis,allmis,
-    H, Z, T, R, Q, c, a, P, stationary, RQdyn,
-    tol=DEFAULT_TOL, log_diag=False):
+def prepare_model(model,n):
+    H   = prepare_mat(model['H'],n)
+    Z   = prepare_mat(model['Z'],n)
+    T   = prepare_mat(model['T'],n)
+    R   = prepare_mat(model['R'],n)
+    Q   = prepare_mat(model['Q'],n)
+    c   = prepare_mat(model['c'],n)
+    a1  = model['a1']['mat']
+    P1  = model['P1']['mat']
+    RQdyn       = model['R']['dynamic'] or model['Q']['dynamic']
+    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
+    return H, Z, T, R, Q, c, a1, P1, stationary, RQdyn
+
+def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol=DEFAULT_TOL, log_diag=False):
     # mode:
     #   0 - all output.
     #   1 - Kalman filter.
@@ -31,6 +43,7 @@ def _kalman(mode, n,y,mis,anymis,allmis,
     # (Only a and v depends on the data y, the values of P, P_inf, d, ... etc. is
     # fixed for given model matrices (parameters).)
     # log_diag: whether to log kalman iteration diagnostics
+    #   All data and state space matrices would not be modified by _kalman
 
     #-- Set output for operating mode --#
     Output_a, Output_P, Output_v, Output_invF, Output_K, Output_L, Output_Pinf, Output_F2, Output_L1, Output_logL_, Output_var_, Output_RQ, Output_QRt, Output_RQRt  = (False,)*14
@@ -64,6 +77,8 @@ def _kalman(mode, n,y,mis,anymis,allmis,
     if log_diag: iter_log = ['']*n
 
     #-- Initialization --#
+    a       = a1.copy()
+    P       = P1.copy()
     D       = (P == np.inf)
     init    = D.any() # use exact diffuse initialization if init = true.
     if init:
@@ -126,7 +141,9 @@ def _kalman(mode, n,y,mis,anymis,allmis,
             if anymis[t]:
                 # "Disable" parts of state space matrices that corresponds to missing elements in the observation vector
                 if log_diag: iter_log[t] = 'anymis,'
+                Zt    = Z[t]
                 Z[t]  = Z[t][~mis[:,t],:]
+                Ht    = H[t]
                 H[t]  = H[t][np.ix_(~mis[:,t],~mis[:,t])]
             if init:
                 #-- Exact diffuse initial Kalman filter --#
@@ -176,6 +193,11 @@ def _kalman(mode, n,y,mis,anymis,allmis,
             v  = y[~mis[:,t],t] - Z[t] * a # The convoluted indexing for y is required to ensure that a column vector is returned (instead of a row vector, which would mess up the shape of a)
             a  = c[t] + T[t] * a + K * v
 
+            if anymis[t]:
+                # "Restore" parts of state space matrices that corresponds to missing elements in the observation vector
+                Z[t]  = Zt
+                H[t]  = Ht
+
         #-- Store results for this iteration (time point t) --#
         if Output_a:    Result_a[:,[t+1]]  = a
         if Output_P:    Result_P[:,:,t+1]  = P
@@ -222,19 +244,8 @@ def _kalman(mode, n,y,mis,anymis,allmis,
 
 def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
     #-- Prepare state space matrices and data --#
-    n   = y.shape[1]
-    mis,anymis,allmis = get_missing(y)
-    y   = np.asmatrix(y)
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
-    R   = copy_mat(model['R'],n)
-    Q   = copy_mat(model['Q'],n)
-    c   = copy_mat(model['c'],n)
-    a1  = model['a1']['mat'].copy()
-    P1  = model['P1']['mat'].copy()
-    RQdyn       = model['R']['dynamic'] or model['Q']['dynamic']
-    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
 
     a, P, d, v, invF = _kalman(1,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=log_diag)
 
@@ -250,14 +261,35 @@ def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
 
     return a, P, v, F
 
-def statesmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
+def estimate(y,model,x0,method=None):
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    nmis    = n - sum(allmis)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+    w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
+
+    #-- Estimate model parameters --#
+    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=False)[0]
+
+    res     = minimize(nloglik,x0,method=method)
+    logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
+    AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+
+    return res.x,logL,AIC,BIC
+
+def statesmo(mode,y,model,tol=DEFAULT_TOL):
     # mode:
     #   0 - all output.
     #   1 - state smoother.
     #   2 - ARMA EM. %%%% TODO: Ignore diffuse initialization for now.
 
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
     #-- Kalman filter --#
-    a,P,d,Fns,v,invF,L,P_inf,F2,L1 = kalman_int(2,n,y,mis,anymis,allmis,model,tol)
+    a, P, d, Fns, v, invF, L, P_inf, F2, L1 = _kalman(2,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
 
     #-- Preallocate Output Results --#
     Output_r, Output_N  = (False,)*2
@@ -271,10 +303,6 @@ def statesmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
         Output_N  = True
     if Output_r: Result_r  = [None]*n
     if Output_N: Result_N  = [None]*n
-
-    #-- Prepare state space matrices --#
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
 
     #-- State smoothing backwards recursion --#
     m   = model['a1']['shape'][0]
@@ -343,7 +371,7 @@ def statesmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
     elif mode == 2: # ARMA EM
         return L,P,alphahat,V,Result_N
 
-def disturbsmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
+def disturbsmo(mode,y,model,tol=DEFAULT_TOL):
     # if ndims(y) > 2
     #     if any(mis[:]), warning('ssm:ssmodel:disturbsmo:BatchMissing', 'Batch operations with missing data not supported for MATLAB code, set ''usec'' to true.')
     #     %% Data preprocessing %%
@@ -400,18 +428,16 @@ def disturbsmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
     # mode 0: all output: epshat,etahat,epsvarhat,etavarhat,Result_r,Result_N
     # mode 1: no Result_r,Result_N
     # mode 2: only epshat,etahat
+
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
     if mode in (0,1):
         #-- Kalman filter --#
-        d,Fns,v,invF,K,L,RQ,QRt = kalman_int(3,n,y,mis,anymis,allmis,model,tol)
-
-        #-- Prepare state space matrices --#
-        H   = copy_mat(model['H'],n)
-        Z   = copy_mat(model['Z'],n)
-        T   = copy_mat(model['T'],n)
-        Q   = copy_mat(model['Q'],n)
+        d,Fns,v,invF,K,L,RQ,QRt = kalman_int(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
 
         #-- Disturbance smoothing backwards recursion --#
-        p   = y.shape[0]
         m   = model['a1']['shape'][0]
         rr  = Q[0].shape[0]
         r   = np.matrix(np.zeros((m,1)))
@@ -463,7 +489,7 @@ def disturbsmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
     elif mode == 2:
         return epshat,etahat
 
-def sigma_int(Sigma,u):
+def _sigma(Sigma,u):
     # Function for incorporating covariance into independent Gaussian samples
     dgSigma = np.diag(Sigma)
     if (Sigma==np.diag(dgSigma)).all(): x = np.diag(np.sqrt(dgSigma)) * u
@@ -474,30 +500,19 @@ def sigma_int(Sigma,u):
         # x = U * (np.diag(np.sqrt(np.diag(Lambda))) * u);
     return x
 
-def sample_int(N,n,p,m,r,model):
-    # function [y alpha eps eta] = sample_int(N, n, p, m, r, Znl, Tnl, Z, T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1)
+def _sample(N,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn):
+    # function [y alpha eps eta] = _sample(N, n, p, m, r, Znl, Tnl, Z, T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1)
     # Sample unconditionally from state space model and parameters (i.e. unconditional on any observed data)
     # y is (p, N, n)
     # alpha is (m, N, n)
     # eps is (p, N, n)
     # eta is (r, N, n)
+    #   All state space matrices would not be modified by _sample
 
     # %% Determine nonlinear functions %%
     # if Znl, Zdyn = false; else Zmat = getmat(Z)
     # if Tnl, Tdyn = false; else Tmat = getmat(T)
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n) #if not Znl else
-    T   = copy_mat(model['T'],n) #if not Tnl else
-    R   = copy_mat(model['R'],n)
-    Q   = copy_mat(model['Q'],n)
-    c   = copy_mat(model['c'],n)
-    a1  = model['a1']['mat'].copy()
-    P1  = model['P1']['mat'].copy()
-    Hdyn = model['H']['dynamic']
-    Zdyn = model['Z']['dynamic']
-    Qdyn = model['Q']['dynamic']
-    cdyn = model['c']['dynamic']
-    c   = [np.tile(c[t],(1,N)) for t in range(n)] if cdyn else [np.tile(c[0],(1,N))]*n
+    c    = [np.tile(c[t],(1,N)) for t in range(n)] if cdyn else [np.tile(c[0],(1,N))]*n
 
     #-- Draw from Gaussian distribution --#
     alpha1  = np.random.normal(size=(m,N))
@@ -505,22 +520,23 @@ def sample_int(N,n,p,m,r,model):
     eta     = np.random.normal(size=(r,N,n))
 
     #-- Initialization for sampling --#
-    if Hdyn: eps[:,:,0] = sigma_int(H[0],eps[:,:,0])
-    else: eps = sigma_int(H[0],eps.reshape((p,N*n))).reshape((p,N,n))
-    if Qdyn: eta[:,:,0] = sigma_int(Q[0],eta[:,:,0])
-    else: eta = sigma_int(Q[0],eta.reshape((r,N*n))).reshape((r,N,n))
+    if Hdyn: eps[:,:,0] = _sigma(H[0],eps[:,:,0])
+    else: eps = _sigma(H[0],eps.reshape((p,N*n))).reshape((p,N,n))
+    if Qdyn: eta[:,:,0] = _sigma(Q[0],eta[:,:,0])
+    else: eta = _sigma(Q[0],eta.reshape((r,N*n))).reshape((r,N,n))
     y       = np.zeros((p,N,n))
     alpha   = np.zeros((m,N,n))
 
     #-- Generate unconditional samples from the model (and given parameters) --#
+    P1  = P1.copy()
     P1[P1 == np.inf] = 0
-    alpha[:,:,0] = np.tile(a1,(1,N)) + sigma_int(P1,alpha1)
+    alpha[:,:,0] = np.tile(a1,(1,N)) + _sigma(P1,alpha1)
     # if Znl, y[:,:,0] = getfunc(Z, alpha[:,:,0], 1);
     # else
     if Zdyn: y[:,:,0] = Z[0] * alpha[:,:,0]
     for t in range(1,n):
-        if Hdyn: eps[:,:,t] = sigma_int(H[t],eps[:,:,t])
-        if Qdyn: eta[:,:,t] = sigma_int(Q[t],eta[:,:,t])
+        if Hdyn: eps[:,:,t] = _sigma(H[t],eps[:,:,t])
+        if Qdyn: eta[:,:,t] = _sigma(Q[t],eta[:,:,t])
         # if Tnl, alpha[:,:,t] = c + getfunc(T, alpha[:,:,t-1], t-1) + R * eta[:,:,t-1];
         # else 
         alpha[:,:,t] = c[t] + T[t] * alpha[:,:,t-1] + R[t] * eta[:,:,t-1]
@@ -534,26 +550,19 @@ def sample_int(N,n,p,m,r,model):
 
     return y,alpha,eps,eta
 
-def fastsmo_int(n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
-    #-- Kalman filter --#
-    d,Fns,v,invF,K,L,L1,QRt = kalman_int(5,n,y,mis,anymis,allmis,model,tol)
+def _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFAULT_TOL):
+    #   No state space matrices would be modified by _fastsmo
 
-    #-- Prepare state space matrices --#
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
-    R   = copy_mat(model['R'],n)
-    c   = copy_mat(model['c'],n)
-    a1  = model['a1']['mat'].copy()
-    P1  = model['P1']['mat'].copy()
+    #-- Kalman filter --#
+    d,Fns,v,invF,K,L,L1,QRt = _kalman(5,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
 
     #-- Initialization --#
+    P1      = P1.copy()
     D       = (P1 == np.inf)
     P1[D]   = 0
     P1_inf  = D.astype(float)
 
     #-- Disturbance smoothing backwards recursion --#
-    m   = model['a1']['shape'][0]
     r   = np.zeros((m,1))
     r1  = np.zeros((m,1))
     epshat  = np.zeros((y.shape[0],n))
@@ -568,8 +577,10 @@ def fastsmo_int(n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
         else:
             if anymis[t]:
                 # "Disable" parts of state space matrices that corresponds to missing elements in the observation vector
-                Z[t]   = Z[t][~mis[:,t],:]
-                H[t]   = H[t][np.ix_(~mis[:,t],~mis[:,t])]
+                Zt    = Z[t]
+                Z[t]  = Z[t][~mis[:,t],:]
+                Ht    = H[t]
+                H[t]  = H[t][np.ix_(~mis[:,t],~mis[:,t])]
             if t > d or not Fns[t]:
                 #-- Normal disturbance smoothing or when F_inf is zero --#
                 epshat[~mis[:,t],t] = H[t] * (invF[t] * v[t] - K[t].T * r)
@@ -580,6 +591,10 @@ def fastsmo_int(n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
                 epshat[~mis[:,t],t] = -H[t] * K[t].T * r
                 r1  = Z[t].T * invF[t] * v[t] + L[t].T * r1 + L1[t].T * r
                 r   = L[t].T * r
+            if anymis[t]:
+                # "Restore" parts of state space matrices that corresponds to missing elements in the observation vector
+                Z[t]  = Zt
+                H[t]  = Ht
 
     #-- Fast state smoothing --#
     alphahat       = np.zeros((m,n))
@@ -589,7 +604,7 @@ def fastsmo_int(n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
 
     return alphahat,epshat,etahat
 
-def batchkalman_int(mode,n,N,y,model,tol=DEFAULT_TOL):
+def _batchkalman(mode,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=DEFAULT_TOL):
     # mode:
     #   0 - all output.
     #   1 - Kalman filter.
@@ -599,6 +614,8 @@ def batchkalman_int(mode,n,N,y,model,tol=DEFAULT_TOL):
     #   y is (p, N, n) and has no missing data.
     # (Only a and v depends on the data y, the values of P, P_inf, d, ... etc. is
     # fixed for given model matrices (parameters).)
+    #   No data or state space matrices would be modified by this routine
+    #   c is (m, N, n), replicated N times
 
     Output_a, Output_P, Output_v, Output_invF, Output_K, Output_L, Output_Pinf, Output_F2, Output_L1, Output_RQ, Output_QRt, Output_RQRt  = (False,)*12
     if mode in (0,'all'): # all output
@@ -618,16 +635,8 @@ def batchkalman_int(mode,n,N,y,model,tol=DEFAULT_TOL):
         Output_v, Output_invF, Output_K, Output_L, Output_QRt   = (True,)*5
 
     #-- Prepare state space matrices --#
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
-    R   = copy_mat(model['R'],n)
-    Q   = copy_mat(model['Q'],n)
-    c   = copy_mat(model['c'],n)
-    c   = [np.tile(c[t],(1,N)) for t in range(n)] if model['c']['dynamic'] else [np.tile(c[0],(1,N))]*n
-    a   = np.tile(model['a1']['mat'].copy(),(1,N))
-    P   = model['P1']['mat'].copy()
-    RQdyn = model['R']['dynamic'] or model['Q']['dynamic']
+    a     = np.tile(a1.copy(),(1,N))
+    P     = P1.copy()
     RQRt  = [R[t]*(Q[t]*R[t].T) for t in range(n)] if RQdyn else [R[0]*(Q[0]*R[0].T)]*n
 
     #-- Initialization --#
@@ -639,7 +648,6 @@ def batchkalman_int(mode,n,N,y,model,tol=DEFAULT_TOL):
         P_inf = D.astype(float)
     else:
         d     = -1
-    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
     converged   = False
 
     #-- Preallocate Output Results --#
@@ -745,7 +753,7 @@ def batchkalman_int(mode,n,N,y,model,tol=DEFAULT_TOL):
     elif mode == 4: # fast disturbance smoother
         return d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_QRt
 
-def batchsmo_int(mode,n,N,y,model,tol=DEFAULT_TOL):
+def _batchsmo(mode,n,N,y,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol=DEFAULT_TOL):
     # y is (p, N, n)
     # alphahat is (m, N, n)
     # epshat is (p, N, n)
@@ -753,27 +761,21 @@ def batchsmo_int(mode,n,N,y,model,tol=DEFAULT_TOL):
     # mode 0: return alphahat,epshat,etahat,Result_r
     # mode 1: return alphahat,epshat,etahat
 
-    #-- Kalman filter --#
-    d,Fns,v,invF,K,L,L1,QRt = batchkalman_int(2,n,N,y,model,tol)
-
     #-- Prepare state space matrices --#
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
-    R   = copy_mat(model['R'],n)
-    c   = copy_mat(model['c'],n)
     c   = [np.tile(c[t],(1,N)) for t in range(n)] if model['c']['dynamic'] else [np.tile(c[0],(1,N))]*n
-    a1  = np.tile(model['a1']['mat'].copy(),(1,N))
-    P1  = model['P1']['mat'].copy()
+
+    #-- Kalman filter --#
+    d,Fns,v,invF,K,L,L1,QRt = _batchkalman(2,n,N,y,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol)
 
     #-- Initialization --#
+    a1      = np.tile(a1.copy(),(1,N))
+    P1      = P1.copy()
     D       = (P1 == np.inf)
     P1[D]   = 0
     P1_inf  = D.astype(float)
 
     #-- Disturbance smoothing backwards recursion --#
     if mode == 0: Result_r = [None]*n
-    m   = a1.shape[0]
     r   = np.zeros((m,N))
     r1  = np.zeros((m,N))
     epshat  = np.zeros((y.shape[0],N,n))
@@ -804,7 +806,7 @@ def batchsmo_int(mode,n,N,y,model,tol=DEFAULT_TOL):
     elif mode == 1:
         return alphahat,epshat,etahat
 
-def simsmo_int(N,n,y,mis,anymis,allmis,model,antithetic=1,tol=DEFAULT_TOL):
+def simsmo_int(N,y,model,antithetic=1,tol=DEFAULT_TOL):
     # function [alphatilde epstilde etatilde alphaplus] = simsmo(y, model, N, varargin)
     # Znl     = isa(model.Z, 'ssfunc');
     # Tnl     = isa(model.T, 'ssfunc');
@@ -814,20 +816,25 @@ def simsmo_int(N,n,y,mis,anymis,allmis,model,antithetic=1,tol=DEFAULT_TOL):
     #         getmat_c(model.a1), getmat_c(model.P1), opt.antithetic, opt.tol, opt.tol, opt.inv, true);
 
     #-- Get the current matrix values --#
-    p  = y.shape[0]
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
     m  = model['T']['shape'][0]
     r  = model['R']['shape'][1]
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+    Hdyn = model['H']['dynamic']
+    Zdyn = model['Z']['dynamic']
+    Qdyn = model['Q']['dynamic']
+    cdyn = model['c']['dynamic']
 
     #-- Data preprocessing --#
     Nsamp = np.ceil(N/2.0) if antithetic >= 1 else N
 
     #-- Unconditional sampling --#
-    yplus,alphaplus,epsplus,etaplus = sample_int(Nsamp,n,p,m,r,model)
-    # yplus,alphaplus,epsplus,etaplus = sample_int(Nsamp,n,p,m,r, Znl, Tnl, model.Z, model.T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1);
+    yplus,alphaplus,epsplus,etaplus = _sample(Nsamp,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn)
+    # yplus,alphaplus,epsplus,etaplus = _sample(Nsamp,n,p,m,r, Znl, Tnl, model.Z, model.T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1);
 
     #-- Fast (and batch) state and disturbance smoothing --#
-    alphahat,epshat,etahat = fastsmo_int(n,y,mis,anymis,allmis,model,tol)
-    alphaplushat,epsplushat,etaplushat = batchsmo_int(1,n,Nsamp,yplus,model,tol)
+    alphahat,epshat,etahat = _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol)
+    alphaplushat,epsplushat,etaplushat = _batchsmo(1,n,Nsamp,yplus,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol=tol)
 
     #-- Calculate sampled disturbances, states and observations --#
     if antithetic >= 1:
@@ -859,7 +866,8 @@ def signal(alpha, model, mcom, t0=0):
     #     ycom    = signal_int_c(alpha, model.mcom, getmat_c(model.Z), ~issta(model.Z), t0, true);
     # else
     n       = alpha.shape[1]
-    ncom    = len(mcom) - 1
+    ncom    = len(mcom)
+    mcom    = np.cumsum([0] + mcom)
     Zmat    = model['Z']['mat']
     if model['Z']['dynamic']:
         p       = Zmat[0].shape[0]

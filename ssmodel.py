@@ -177,22 +177,6 @@ def set_param(model,x):
             i  += nparam
     return model
 
-def estimate(y,model,x0,method=None):
-    #-- Get information about data --#
-    p,n     = y.shape
-    mis,anymis,allmis = get_missing(y)
-    nmis    = n - sum(allmis)
-    w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
-
-    #-- Estimate model parameters --#
-    nloglik = lambda x: kalman_int(4,n,y,mis,anymis,allmis,set_param(model,x))[0]
-    res     = minimize(nloglik,x0,method=method)
-    logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
-    AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-    BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-
-    return res.x,logL,AIC,BIC
-
 def validate_model(model):
     MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
     for M in MM:
