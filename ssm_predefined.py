@@ -338,3 +338,70 @@ def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
     if x is not None: models.append(model_mvreg(p, x))
 
     return model_cat(models)
+
+def model_arma(p, q, mean=False):
+    # %MAT_ARMA Create base matrices for ARMA(p, q) models.
+    # %   [Z T R P1 Tmask Rmask P1mask] = MAT_ARMA(p, q[, mean])
+    # %   [T R P1 Tmask Rmask P1mask] = MAT_ARMA(p, q[, mean])
+    # %       Set mean to true to create a model with mean.
+
+    r   = max(p, q+1)
+    if mean:
+        Z    = mat_const([1.0] + [0.0]*r)
+        T_r  = np.bmat([[np.eye(r)],[np.mat([0.0]*(r-1)+[1.0])]]) # right side
+        T_lb = [[0.0]]*(r-p+1) # left side bottom
+        if p == 1:
+            def psi_to_ar(x):
+                # bound variables: T_lb, T_r
+                phi  = x[0]/np.sqrt(1 + x[0]**2)
+                T_l  = np.mat([[phi]] + T_lb)
+                return np.bmat([T_l,T_r])
+        elif p == 2:
+            def psi_to_ar(x):
+                # bound variables: T_lb, T_r
+                x    = np.asarray(x)
+                Y    = x/np.sqrt(1 + x**2)
+                phi  = [[(1-Y[1])*Y[0]],[Y[1]]]
+                T_l  = np.mat(phi + T_lb)
+                return np.bmat([T_l,T_r])
+        else:
+            T_lb  = np.mat(T_lb)
+            def psi_to_ar(x):
+                # bound variables:
+                T_l  = np.bmat([[np.asarray(x)[:,None]],[T_lb]])
+                return np.bmat([T_l,T_r])
+        T   = {
+            'linear':   True,
+            'dynamic':  False,
+            'constant': False,
+            'shape':  (r+1,)*2,
+            'func':   psi_to_ar,
+            'nparam': p}
+
+
+        R   = mat_const([[1.0]] + [[0.0]]*r)
+        P1  = mat_const(np.diag([0.0]*r + [np.inf]))
+        if p == 0:
+            Tmask = [];
+        else:
+            Tmask = [[true(p, 1); false(r-p+1, 1)] false(r+1, r)]; end
+        if q == 0:
+            Rmask = [];
+        else:
+            Rmask = [false; true(q, 1); false(r-q, 1)]; end
+        P1mask  = logical(blkdiag(ones(r), 0));
+    else:
+        Z   = mat_const([1.0] + [0.0]*(r-1))
+        T   = mat_const(np.bmat([[np.zeros((r-1,1)),np.eye(r-1)],[np.zeros((1,r))]]))
+        R   = [1; zeros(r-1, 1)];
+        P1  = zeros(r);
+        if p == 0:
+            Tmask = []
+        else:
+            Tmask = [[true(p, 1); false(r-p, 1)] false(r, r-1)]; end
+        if q == 0, Rmask = []; else Rmask = [false; true(q, 1); false(r-q-1, 1)]; end
+        P1mask  = true(r);
+    end
+    if nargout == 7, varargout = {Z T R P1 Tmask Rmask P1mask};
+    else varargout = {T R P1 Tmask Rmask P1mask}; end
+
