@@ -6,7 +6,7 @@ from scipy.linalg import sqrtm
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import ssmodel as ssm
+import ssm
 
 mpl.rcParams['figure.figsize'] = (16,10)
 SILENT_OUTPUT = bool(sys.argv[1] if len(sys.argv)>1 else 0)
@@ -213,6 +213,7 @@ else:
     plt.show()
 
 #-- Add intervention to both series --#
+
 # bibstsm2i           = [bibstsm ssm_mvintv(2, size(y2, 2), 'step', 170)];
 # [bibstsm2i logL2i]  = estimate(y2, bibstsm2i, [0.0054 0.00857 0.00445 0.000256 0.000232 0.000225], [], 'fmin', 'bfgs', 'disp', 'off');
 # [alphahat2i V2i]    = statesmo(y2, bibstsm2i);

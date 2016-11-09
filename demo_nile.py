@@ -4,7 +4,7 @@ import sys
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import ssmodel as ssm
+import ssm
 
 mpl.rcParams['figure.figsize'] = (16,10)
 SILENT_OUTPUT = bool(sys.argv[1] if len(sys.argv)>1 else 0)

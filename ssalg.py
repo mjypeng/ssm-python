@@ -1,34 +1,70 @@
 # -*- coding: utf-8 -*-
 
-import numpy as np
+from ssm_common import *
 from scipy.optimize import minimize
 
 DEFAULT_TOL = 10**-7
 
-def prepare_data(y):
-    # y is a 2D matrix n*p, missing data is currently not supported for 3D (batch mode)
-    p,n     = y.shape
-    mis     = np.asarray(np.isnan(y))
-    anymis  = np.any(mis,0)
-    allmis  = np.all(mis,0)
-    y       = np.asmatrix(y) # asmatrix may or may not make a copy
-    return n, p, y, mis, anymis, allmis
+def _sigma(Sigma,u):
+    # Function for incorporating covariance into independent Gaussian samples
+    dgSigma = np.diag(Sigma)
+    if (Sigma==np.diag(dgSigma)).all(): x = np.diag(np.sqrt(dgSigma)) * u
+    else: # Sigma is not diagonal
+        lmbda,U = np.linalg.eig(Sigma)
+        x = U * (np.diag(np.sqrt(lmbda))) * u
+        # [U Lambda] = eig(full(Sigma));
+        # x = U * (np.diag(np.sqrt(np.diag(Lambda))) * u);
+    return x
 
-def prepare_mat(M,n):
-    return M['mat'] if M['dynamic'] else [M['mat']]*n
+def _sample(N,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn):
+    # function [y alpha eps eta] = _sample(N, n, p, m, r, Znl, Tnl, Z, T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1)
+    # Sample unconditionally from state space model and parameters (i.e. unconditional on any observed data)
+    # y is (p, N, n)
+    # alpha is (m, N, n)
+    # eps is (p, N, n)
+    # eta is (r, N, n)
+    #   All state space matrices would not be modified by _sample
 
-def prepare_model(model,n):
-    H   = prepare_mat(model['H'],n)
-    Z   = prepare_mat(model['Z'],n)
-    T   = prepare_mat(model['T'],n)
-    R   = prepare_mat(model['R'],n)
-    Q   = prepare_mat(model['Q'],n)
-    c   = prepare_mat(model['c'],n)
-    a1  = model['a1']['mat']
-    P1  = model['P1']['mat']
-    RQdyn       = model['R']['dynamic'] or model['Q']['dynamic']
-    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
-    return H, Z, T, R, Q, c, a1, P1, stationary, RQdyn
+    # %% Determine nonlinear functions %%
+    # if Znl, Zdyn = false; else Zmat = getmat(Z)
+    # if Tnl, Tdyn = false; else Tmat = getmat(T)
+    c    = [np.tile(c[t],(1,N)) for t in range(n)] if cdyn else [np.tile(c[0],(1,N))]*n
+
+    #-- Draw from Gaussian distribution --#
+    alpha1  = np.random.normal(size=(m,N))
+    eps     = np.random.normal(size=(p,N,n))
+    eta     = np.random.normal(size=(r,N,n))
+
+    #-- Initialization for sampling --#
+    if Hdyn: eps[:,:,0] = _sigma(H[0],eps[:,:,0])
+    else: eps = _sigma(H[0],eps.reshape((p,N*n))).reshape((p,N,n))
+    if Qdyn: eta[:,:,0] = _sigma(Q[0],eta[:,:,0])
+    else: eta = _sigma(Q[0],eta.reshape((r,N*n))).reshape((r,N,n))
+    y       = np.zeros((p,N,n))
+    alpha   = np.zeros((m,N,n))
+
+    #-- Generate unconditional samples from the model (and given parameters) --#
+    P1  = P1.copy()
+    P1[P1 == np.inf] = 0
+    alpha[:,:,0] = np.tile(a1,(1,N)) + _sigma(P1,alpha1)
+    # if Znl, y[:,:,0] = getfunc(Z, alpha[:,:,0], 1);
+    # else
+    if Zdyn: y[:,:,0] = Z[0] * alpha[:,:,0]
+    for t in range(1,n):
+        if Hdyn: eps[:,:,t] = _sigma(H[t],eps[:,:,t])
+        if Qdyn: eta[:,:,t] = _sigma(Q[t],eta[:,:,t])
+        # if Tnl, alpha[:,:,t] = c + getfunc(T, alpha[:,:,t-1], t-1) + R * eta[:,:,t-1];
+        # else 
+        alpha[:,:,t] = c[t] + T[t] * alpha[:,:,t-1] + R[t] * eta[:,:,t-1]
+        # if Znl, y[:,:,t] = getfunc(Z, alpha[:,:,t], t)
+        if Zdyn: y[:,:,t] = Z[t] * alpha[:,:,t]
+    # if ~Znl && 
+    if not Zdyn:
+        y = np.asarray(Z[0] * alpha.reshape((m,N*n))).reshape((p,N,n)) + eps # need to cast back to ndarray to preserve 3D (avoid matrix auto squeeze back to 2D)
+    else:
+        y = y + eps
+
+    return y,alpha,eps,eta
 
 def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol,log_diag=False):
     # mode:
@@ -242,339 +278,6 @@ def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol
     elif mode == 8: # loglikelihood gradient
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_logL_+Result_var_,Result_var_
     return output + (iter_log,) if log_diag else output
-
-def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
-    #-- Prepare state space matrices and data --#
-    n, p, y, mis, anymis, allmis  = prepare_data(y)
-    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
-
-    a, P, d, v, invF = _kalman(1,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=log_diag)
-
-    # Build ndarrays from list output
-    v   = np.array(np.concatenate(v,1))
-    F   = np.concatenate([np.array(x[:,:,None]) for x in invF],2)**-1
-
-    # Suppress output during diffuse initialization
-    a[:,:d+1]     = np.nan
-    P[:,:,:d+1]   = np.nan
-    v[:,:d+1]     = np.nan
-    F[:,:,:d+1]   = np.nan
-
-    return a, P, v, F
-
-def loglik(y,model,tol=DEFAULT_TOL):
-    #-- Prepare state space matrices and data --#
-    n, p, y, mis, anymis, allmis  = prepare_data(y)
-    nmis    = n - np.sum(allmis)
-    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
-
-    #-- Calculate loglikelihood --#
-    _logL,_fvar = _kalman(4,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=False)
-    logL        = -(nmis*p*np.log(2*np.pi) + _logL) / 2
-    fvar        = _fvar / (n*p - np.sum(P1 == np.inf))
-
-    return logL, fvar
-
-def set_param(model,x):
-    # The model is modified inplace, but reference returned for convenience
-    i  = 0
-    for M in ('H','Z','T','R','Q','c'):
-        if not model[M]['constant']:
-            nparam  = model[M]['nparam']
-            model[M]['mat'] = model[M]['func'](x[i:i+nparam])
-            i  += nparam
-    return model
-
-def estimate(y,model,x0,method=None,tol=DEFAULT_TOL):
-    #-- Prepare state space matrices and data --#
-    n, p, y, mis, anymis, allmis  = prepare_data(y)
-    nmis    = n - sum(allmis)
-    w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
-
-    #-- Estimate model parameters --#
-    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
-
-    res     = minimize(nloglik,x0,method=method)
-    logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
-    AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-    BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-
-    return res.x,logL,AIC,BIC
-
-def statesmo(mode,y,model,tol=DEFAULT_TOL):
-    # mode:
-    #   0 - all output.
-    #   1 - state smoother.
-    #   2 - ARMA EM. %%%% TODO: Ignore diffuse initialization for now.
-
-    #-- Prepare state space matrices and data --#
-    n, p, y, mis, anymis, allmis  = prepare_data(y)
-    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
-
-    #-- Kalman filter --#
-    a, P, d, Fns, v, invF, L, P_inf, F2, L1 = _kalman(2,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
-
-    #-- Preallocate Output Results --#
-    Output_r, Output_N  = (False,)*2
-    if mode in (0,'all'): # all output
-        mode = 0
-        Output_r, Output_N  = (True,)*2
-    elif mode in (1,'statesmo'): # state smoother
-        mode = 1
-        Output_r, Output_N  = (True,)*2
-    elif mode == 2: # ARMA EM
-        Output_N  = True
-    if Output_r: Result_r  = [None]*n
-    if Output_N: Result_N  = [None]*n
-
-    #-- State smoothing backwards recursion --#
-    m   = model['a1']['shape'][0]
-    r   = np.matrix(np.zeros((m,1)))
-    r1  = np.matrix(np.zeros((m,1)))
-    N   = np.matrix(np.zeros((m,m)))
-    N1  = np.matrix(np.zeros((m,m)))
-    N2  = np.matrix(np.zeros((m,m)))
-    alphahat    = np.zeros((m,n))
-    V           = np.zeros((m,m,n))
-    for t in range(n-1,-1,-1):
-        #-- Store output --#
-        if Output_r: Result_r[t] = r
-        if Output_N: Result_N[t] = N
-        if allmis[t]:
-            #-- State smoothing when all observations are missing --#
-            r   = T[t].T * r
-            N   = T[t].T * N * T[t]
-            if t > d:
-                alphahat[:,t]  = P[:,:,t] * r
-                V[:,:,t]       = P[:,:,t] * N * P[:,:,t]
-            else:
-                r1  = T[t].T * r1
-                N1  = T[t].T * N1 * T[t]
-                N2  = T[t].T * N2 * T[t]
-                alphahat[:,t]  = P[:,:,t] * r + P_inf[t] * r1
-                P_infN1P       = P_inf[t] * N1 * P[:,:,t]
-                V[:,:,t]       = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
-        else:
-            if anymis[t]: Z[t] = Z[t][~mis[:,t],:]
-            if t > d:
-                #-- Normal state smoothing --#
-                M   = Z[t].T * invF[t]
-                r   = M * v[t] + L[t].T * r
-                N   = M * Z[t] + L[t].T * N * L[t]
-                alphahat[:,[t]] = P[:,:,t] * r
-                V[:,:,t]        = P[:,:,t] * N * P[:,:,t]
-            else:
-                #-- Exact initial state smoothing --#
-                if Fns[t]:
-                    r1  = Z[t].T * invF[t] * v[t] + L[t].T * r1 + L1[t].T * r
-                    r   = L[t].T * r
-                    LN  = L[t].T * N1 + L1[t].T * N
-                    N2  = Z[t].T * F2[t] * Z[t] + LN * L1[t] + (L[t].T * N2 + L1[t].T * N1) * L[t]
-                    N1  = Z[t].T * invF[t] * Z[t] + LN * L[t]
-                    N   = L[t].T * N * L[t]
-                else: # F_inf[t] = 0
-                    M   = Z[t].T * invF[t]
-                    r   = M * v[t] + L[t].T * r
-                    r1  = T[t].T * r1
-                    N   = M * Z[t] + L[t].T * N * L[t]
-                    N1  = T[t].T * N1 * L[t]
-                    N2  = T[t].T * N2 * T[t]
-                alphahat[:,[t]] = P[:,:,t] * r + P_inf[t] * r1
-                P_infN1P        = P_inf[t] * N1 * P[:,:,t]
-                V[:,:,t]        = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
-
-    alphahat    = a[:,:n] + alphahat
-    V           = P[:,:,:n] - V
-
-    #-- Output Results --#
-    if mode == 0: # all output
-        return L,P,alphahat,V,Result_r,Result_N
-    elif mode == 1: # state smoother
-        # Build ndarrays from list output
-        Result_r   = np.array(np.concatenate(Result_r,1))
-        Result_N   = np.concatenate([np.array(x[:,:,None]) for x in Result_N],2)
-        return alphahat,V,Result_r,Result_N
-    elif mode == 2: # ARMA EM
-        return L,P,alphahat,V,Result_N
-
-def disturbsmo(mode,y,model,tol=DEFAULT_TOL):
-    # if ndims(y) > 2
-    #     if any(mis[:]), warning('ssm:ssmodel:disturbsmo:BatchMissing', 'Batch operations with missing data not supported for MATLAB code, set ''usec'' to true.')
-    #     %% Data preprocessing %%
-    #     N   = size(y, 3);
-    #     y   = permute(y, (0,2,1));
-    #     %% Batch smoother %%
-    #     [temp epshat etahat Result_r] = batchsmo_int(n, N, y, ...
-    #         ~issta(model.H), ~issta(model.Z), ~issta(model.T), ~issta(model.R), ~issta(model.Q), ~issta(model.c), ...
-    #         getmat(model.H), getmat(model.Z), getmat(model.T), getmat(model.R), getmat(model.Q), getmat(model.c), ...
-    #         model.a1.mat, model.P1.mat, opt.tol);
-    #     %% Result postprocessing %%
-    #     epshat   = permute(epshat, (0,2,1));
-    #     etahat   = permute(etahat, (0,2,1));
-    #     if nargout > 2
-    #         %% Kalman filter %%
-    #         [d Fns v invF K L RQ QRt] = kalman_int(3, n, y, mis, anymis, allmis, Hdyn, Zdyn, Tdyn, ~issta(model.R), Qdyn, ~issta(model.c), Hmat, Zmat, Tmat, getmat(model.R), Qmat, getmat(model.c), a1, model.P1.mat, opt.tol);
-    #         %% Disturbance smoothing backwards recursion %%
-    #         p   = size(y, 1);
-    #         m   = size(a1, 1);
-    #         rr  = size(model.Q, 1);
-    #         N   = np.zeros(m, m);
-    #         epsvarhat   = np.zeros(p, p, n);
-    #         etavarhat   = np.zeros(rr, rr, n);
-    #         Result_N    = cell(1, n);
-    #         for t = n : -1 : 1
-    #             Result_N[t]     = N;
-    #             if Hdyn, H = Hmat[t].copy()
-    #             if Zdyn, Z = Zmat[t].copy()
-    #             if Tdyn, T = Tmat[t].copy()
-    #             if Qdyn, Q = Qmat[t].copy()
-    #             etavarhat[:,:,t] = Q - QRt[t] * N * RQ[t];
-    #             if allmis[t]
-    #                 %% Disturbance smoothing when all observations are missing %%
-    #                 epsvarhat[:,:,t] = H; %%%% TODO: What is epsvarhat when all missing?
-    #                 N = T.T * N * T
-    #             else
-    #                 if anymis[t], Z(mis[:,t],:)=[]; H(mis[:,t],:)=[]; H(:,mis[:,t])=[]
-    #                 if t > d || ~Fns[t]
-    #                     %% Normal disturbance smoothing or when F_inf is zero %%
-    #                     epsvarhat(~mis[:,t], ~mis[:,t], t) = H - H * (invF[t] + K[t].T * N * K[t]) * H;
-    #                     M = Z.T * invF[t];
-    #                     N = M * Z + L[t].T * N * L[t];
-    #                 else
-    #                     %% Exact initial disturbance smoothing when F_inf is nonsingular %%
-    #                     epsvarhat(~mis[:,t], ~mis[:,t], t) = H - H * K[t].T * N * K[t] * H;
-    #                     N = L[t].T * N * L[t];
-    #                 end
-    #                 if anymis[t], if ~Zdyn, Z = Zmat, if ~Hdyn, H = Hmat, end
-    #             end
-    #         end
-    #     end
-    # else # ndims(y) <= 2
-
-    # mode 0: all output: epshat,etahat,epsvarhat,etavarhat,Result_r,Result_N
-    # mode 1: no Result_r,Result_N
-    # mode 2: only epshat,etahat
-
-    #-- Prepare state space matrices and data --#
-    n, p, y, mis, anymis, allmis  = prepare_data(y)
-    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
-
-    if mode in (0,1):
-        #-- Kalman filter --#
-        d,Fns,v,invF,K,L,RQ,QRt = _kalman(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
-
-        #-- Disturbance smoothing backwards recursion --#
-        m   = model['a1']['shape'][0]
-        rr  = Q[0].shape[0]
-        r   = np.matrix(np.zeros((m,1)))
-        N   = np.matrix(np.zeros((m,m)))
-        epshat      = np.zeros((p,n))
-        epsvarhat   = np.zeros((p,p,n))
-        etahat      = np.zeros((rr,n))
-        etavarhat   = np.zeros((rr,rr,n))
-        if mode == 0:
-            Result_r = [None]*n
-            Result_N = [None]*n
-        for t in range(n-1,-1,-1):
-            if mode == 0:
-                Result_r[t] = r
-                Result_N[t] = N
-            etahat[:,[t]]    = QRt[t] * r
-            etavarhat[:,:,t] = Q[t] - QRt[t] * N * RQ[t]
-            if allmis[t]:
-                #-- Disturbance smoothing when all observations are missing --#
-                epshat[:,t] = 0
-                epsvarhat[:,:,t] = H[t].copy() #### TODO: What is epsvarhat when all missing?
-                r = T[t].T * r
-                N = T[t].T * N * T[t]
-            else:
-                if anymis[t]:
-                    # "Disable" parts of state space matrices that corresponds to missing elements in the observation vector
-                    Z[t]   = Z[t][~mis[:,t],:]
-                    H[t]   = H[t][np.ix_(~mis[:,t],~mis[:,t])]
-                if t > d or not Fns[t]:
-                    #-- Normal disturbance smoothing or when F_inf is zero --#
-                    epshat[~mis[:,t],t] = H[t] * (invF[t] * v[t] - K[t].T * r)
-                    epsvarhat[np.ix_(~mis[:,t],~mis[:,t],[t])] = H[t] - H[t] * (invF[t] + K[t].T * N * K[t]) * H[t]
-                    M = Z[t].T * invF[t]
-                    r = M * v[t] + L[t].T * r
-                    N = M * Z[t] + L[t].T * N * L[t]
-                else:
-                    #-- Exact initial disturbance smoothing when F_inf is nonsingular --#
-                    epshat[~mis[:,t],t] = -H[t] * K[t].T * r
-                    epsvarhat[np.ix_(~mis[:,t],~mis[:,t],[t])] = H[t] - H[t] * K[t].T * N * K[t] * H[t]
-                    r = L[t].T * r
-                    N = L[t].T * N * L[t]
-    # elif mode == 2:
-    #     [epshat etahat] = fastdisturbsmo_int(n, y, mis, anymis, allmis, Hdyn, Zdyn, Tdyn, ~issta(model.R), Qdyn, ~issta(model.c), Hmat, Zmat, Tmat, getmat(model.R), Qmat, getmat(model.c), a1, model.P1.mat, opt.tol);
-
-    if mode == 0:
-        return epshat,etahat,epsvarhat,etavarhat,Result_r,Result_N
-    elif mode == 1:
-        return epshat,etahat,epsvarhat,etavarhat
-    elif mode == 2:
-        return epshat,etahat
-
-def _sigma(Sigma,u):
-    # Function for incorporating covariance into independent Gaussian samples
-    dgSigma = np.diag(Sigma)
-    if (Sigma==np.diag(dgSigma)).all(): x = np.diag(np.sqrt(dgSigma)) * u
-    else: # Sigma is not diagonal
-        lmbda,U = np.linalg.eig(Sigma)
-        x = U * (np.diag(np.sqrt(lmbda))) * u
-        # [U Lambda] = eig(full(Sigma));
-        # x = U * (np.diag(np.sqrt(np.diag(Lambda))) * u);
-    return x
-
-def _sample(N,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn):
-    # function [y alpha eps eta] = _sample(N, n, p, m, r, Znl, Tnl, Z, T, Hdyn, Zdyn, Tdyn, Rdyn, Qdyn, cdyn, Hmat, Rmat, Qmat, cmat, a1, P1)
-    # Sample unconditionally from state space model and parameters (i.e. unconditional on any observed data)
-    # y is (p, N, n)
-    # alpha is (m, N, n)
-    # eps is (p, N, n)
-    # eta is (r, N, n)
-    #   All state space matrices would not be modified by _sample
-
-    # %% Determine nonlinear functions %%
-    # if Znl, Zdyn = false; else Zmat = getmat(Z)
-    # if Tnl, Tdyn = false; else Tmat = getmat(T)
-    c    = [np.tile(c[t],(1,N)) for t in range(n)] if cdyn else [np.tile(c[0],(1,N))]*n
-
-    #-- Draw from Gaussian distribution --#
-    alpha1  = np.random.normal(size=(m,N))
-    eps     = np.random.normal(size=(p,N,n))
-    eta     = np.random.normal(size=(r,N,n))
-
-    #-- Initialization for sampling --#
-    if Hdyn: eps[:,:,0] = _sigma(H[0],eps[:,:,0])
-    else: eps = _sigma(H[0],eps.reshape((p,N*n))).reshape((p,N,n))
-    if Qdyn: eta[:,:,0] = _sigma(Q[0],eta[:,:,0])
-    else: eta = _sigma(Q[0],eta.reshape((r,N*n))).reshape((r,N,n))
-    y       = np.zeros((p,N,n))
-    alpha   = np.zeros((m,N,n))
-
-    #-- Generate unconditional samples from the model (and given parameters) --#
-    P1  = P1.copy()
-    P1[P1 == np.inf] = 0
-    alpha[:,:,0] = np.tile(a1,(1,N)) + _sigma(P1,alpha1)
-    # if Znl, y[:,:,0] = getfunc(Z, alpha[:,:,0], 1);
-    # else
-    if Zdyn: y[:,:,0] = Z[0] * alpha[:,:,0]
-    for t in range(1,n):
-        if Hdyn: eps[:,:,t] = _sigma(H[t],eps[:,:,t])
-        if Qdyn: eta[:,:,t] = _sigma(Q[t],eta[:,:,t])
-        # if Tnl, alpha[:,:,t] = c + getfunc(T, alpha[:,:,t-1], t-1) + R * eta[:,:,t-1];
-        # else 
-        alpha[:,:,t] = c[t] + T[t] * alpha[:,:,t-1] + R[t] * eta[:,:,t-1]
-        # if Znl, y[:,:,t] = getfunc(Z, alpha[:,:,t], t)
-        if Zdyn: y[:,:,t] = Z[t] * alpha[:,:,t]
-    # if ~Znl && 
-    if not Zdyn:
-        y = np.asarray(Z[0] * alpha.reshape((m,N*n))).reshape((p,N,n)) + eps # need to cast back to ndarray to preserve 3D (avoid matrix auto squeeze back to 2D)
-    else:
-        y = y + eps
-
-    return y,alpha,eps,eta
 
 def _fastsmo(n,y,mis,anymis,allmis,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol):
     #   No state space matrices would be modified by _fastsmo
@@ -832,6 +535,268 @@ def _batchsmo(mode,n,N,y,m,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,cdyn,tol):
         return alphahat,epshat,etahat,Result_r
     elif mode == 1:
         return alphahat,epshat,etahat
+
+def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
+    a, P, d, v, invF = _kalman(1,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=log_diag)
+
+    # Build ndarrays from list output
+    v   = np.array(np.concatenate(v,1))
+    F   = np.concatenate([np.array(x[:,:,None]) for x in invF],2)**-1
+
+    # Suppress output during diffuse initialization
+    a[:,:d+1]     = np.nan
+    P[:,:,:d+1]   = np.nan
+    v[:,:d+1]     = np.nan
+    F[:,:,:d+1]   = np.nan
+
+    return a, P, v, F
+
+def loglik(y,model,tol=DEFAULT_TOL):
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    nmis    = n - np.sum(allmis)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
+    #-- Calculate loglikelihood --#
+    _logL,_fvar = _kalman(4,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=False)
+    logL        = -(nmis*p*np.log(2*np.pi) + _logL) / 2
+    fvar        = _fvar / (n*p - np.sum(P1 == np.inf))
+
+    return logL, fvar
+
+def estimate(y,model,x0,method=None,tol=DEFAULT_TOL):
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    nmis    = n - sum(allmis)
+    w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
+
+    #-- Estimate model parameters --#
+    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
+
+    res     = minimize(nloglik,x0,method=method)
+    logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
+    AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+
+    return res.x,logL,AIC,BIC
+
+def statesmo(mode,y,model,tol=DEFAULT_TOL):
+    # mode:
+    #   0 - all output.
+    #   1 - state smoother.
+    #   2 - ARMA EM. %%%% TODO: Ignore diffuse initialization for now.
+
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
+    #-- Kalman filter --#
+    a, P, d, Fns, v, invF, L, P_inf, F2, L1 = _kalman(2,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
+
+    #-- Preallocate Output Results --#
+    Output_r, Output_N  = (False,)*2
+    if mode in (0,'all'): # all output
+        mode = 0
+        Output_r, Output_N  = (True,)*2
+    elif mode in (1,'statesmo'): # state smoother
+        mode = 1
+        Output_r, Output_N  = (True,)*2
+    elif mode == 2: # ARMA EM
+        Output_N  = True
+    if Output_r: Result_r  = [None]*n
+    if Output_N: Result_N  = [None]*n
+
+    #-- State smoothing backwards recursion --#
+    m   = model['a1']['shape'][0]
+    r   = np.matrix(np.zeros((m,1)))
+    r1  = np.matrix(np.zeros((m,1)))
+    N   = np.matrix(np.zeros((m,m)))
+    N1  = np.matrix(np.zeros((m,m)))
+    N2  = np.matrix(np.zeros((m,m)))
+    alphahat    = np.zeros((m,n))
+    V           = np.zeros((m,m,n))
+    for t in range(n-1,-1,-1):
+        #-- Store output --#
+        if Output_r: Result_r[t] = r
+        if Output_N: Result_N[t] = N
+        if allmis[t]:
+            #-- State smoothing when all observations are missing --#
+            r   = T[t].T * r
+            N   = T[t].T * N * T[t]
+            if t > d:
+                alphahat[:,t]  = P[:,:,t] * r
+                V[:,:,t]       = P[:,:,t] * N * P[:,:,t]
+            else:
+                r1  = T[t].T * r1
+                N1  = T[t].T * N1 * T[t]
+                N2  = T[t].T * N2 * T[t]
+                alphahat[:,t]  = P[:,:,t] * r + P_inf[t] * r1
+                P_infN1P       = P_inf[t] * N1 * P[:,:,t]
+                V[:,:,t]       = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
+        else:
+            if anymis[t]: Z[t] = Z[t][~mis[:,t],:]
+            if t > d:
+                #-- Normal state smoothing --#
+                M   = Z[t].T * invF[t]
+                r   = M * v[t] + L[t].T * r
+                N   = M * Z[t] + L[t].T * N * L[t]
+                alphahat[:,[t]] = P[:,:,t] * r
+                V[:,:,t]        = P[:,:,t] * N * P[:,:,t]
+            else:
+                #-- Exact initial state smoothing --#
+                if Fns[t]:
+                    r1  = Z[t].T * invF[t] * v[t] + L[t].T * r1 + L1[t].T * r
+                    r   = L[t].T * r
+                    LN  = L[t].T * N1 + L1[t].T * N
+                    N2  = Z[t].T * F2[t] * Z[t] + LN * L1[t] + (L[t].T * N2 + L1[t].T * N1) * L[t]
+                    N1  = Z[t].T * invF[t] * Z[t] + LN * L[t]
+                    N   = L[t].T * N * L[t]
+                else: # F_inf[t] = 0
+                    M   = Z[t].T * invF[t]
+                    r   = M * v[t] + L[t].T * r
+                    r1  = T[t].T * r1
+                    N   = M * Z[t] + L[t].T * N * L[t]
+                    N1  = T[t].T * N1 * L[t]
+                    N2  = T[t].T * N2 * T[t]
+                alphahat[:,[t]] = P[:,:,t] * r + P_inf[t] * r1
+                P_infN1P        = P_inf[t] * N1 * P[:,:,t]
+                V[:,:,t]        = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
+
+    alphahat    = a[:,:n] + alphahat
+    V           = P[:,:,:n] - V
+
+    #-- Output Results --#
+    if mode == 0: # all output
+        return L,P,alphahat,V,Result_r,Result_N
+    elif mode == 1: # state smoother
+        # Build ndarrays from list output
+        Result_r   = np.array(np.concatenate(Result_r,1))
+        Result_N   = np.concatenate([np.array(x[:,:,None]) for x in Result_N],2)
+        return alphahat,V,Result_r,Result_N
+    elif mode == 2: # ARMA EM
+        return L,P,alphahat,V,Result_N
+
+def disturbsmo(mode,y,model,tol=DEFAULT_TOL):
+    # if ndims(y) > 2
+    #     if any(mis[:]), warning('ssm:ssmodel:disturbsmo:BatchMissing', 'Batch operations with missing data not supported for MATLAB code, set ''usec'' to true.')
+    #     %% Data preprocessing %%
+    #     N   = size(y, 3);
+    #     y   = permute(y, (0,2,1));
+    #     %% Batch smoother %%
+    #     [temp epshat etahat Result_r] = batchsmo_int(n, N, y, ...
+    #         ~issta(model.H), ~issta(model.Z), ~issta(model.T), ~issta(model.R), ~issta(model.Q), ~issta(model.c), ...
+    #         getmat(model.H), getmat(model.Z), getmat(model.T), getmat(model.R), getmat(model.Q), getmat(model.c), ...
+    #         model.a1.mat, model.P1.mat, opt.tol);
+    #     %% Result postprocessing %%
+    #     epshat   = permute(epshat, (0,2,1));
+    #     etahat   = permute(etahat, (0,2,1));
+    #     if nargout > 2
+    #         %% Kalman filter %%
+    #         [d Fns v invF K L RQ QRt] = kalman_int(3, n, y, mis, anymis, allmis, Hdyn, Zdyn, Tdyn, ~issta(model.R), Qdyn, ~issta(model.c), Hmat, Zmat, Tmat, getmat(model.R), Qmat, getmat(model.c), a1, model.P1.mat, opt.tol);
+    #         %% Disturbance smoothing backwards recursion %%
+    #         p   = size(y, 1);
+    #         m   = size(a1, 1);
+    #         rr  = size(model.Q, 1);
+    #         N   = np.zeros(m, m);
+    #         epsvarhat   = np.zeros(p, p, n);
+    #         etavarhat   = np.zeros(rr, rr, n);
+    #         Result_N    = cell(1, n);
+    #         for t = n : -1 : 1
+    #             Result_N[t]     = N;
+    #             if Hdyn, H = Hmat[t].copy()
+    #             if Zdyn, Z = Zmat[t].copy()
+    #             if Tdyn, T = Tmat[t].copy()
+    #             if Qdyn, Q = Qmat[t].copy()
+    #             etavarhat[:,:,t] = Q - QRt[t] * N * RQ[t];
+    #             if allmis[t]
+    #                 %% Disturbance smoothing when all observations are missing %%
+    #                 epsvarhat[:,:,t] = H; %%%% TODO: What is epsvarhat when all missing?
+    #                 N = T.T * N * T
+    #             else
+    #                 if anymis[t], Z(mis[:,t],:)=[]; H(mis[:,t],:)=[]; H(:,mis[:,t])=[]
+    #                 if t > d || ~Fns[t]
+    #                     %% Normal disturbance smoothing or when F_inf is zero %%
+    #                     epsvarhat(~mis[:,t], ~mis[:,t], t) = H - H * (invF[t] + K[t].T * N * K[t]) * H;
+    #                     M = Z.T * invF[t];
+    #                     N = M * Z + L[t].T * N * L[t];
+    #                 else
+    #                     %% Exact initial disturbance smoothing when F_inf is nonsingular %%
+    #                     epsvarhat(~mis[:,t], ~mis[:,t], t) = H - H * K[t].T * N * K[t] * H;
+    #                     N = L[t].T * N * L[t];
+    #                 end
+    #                 if anymis[t], if ~Zdyn, Z = Zmat, if ~Hdyn, H = Hmat, end
+    #             end
+    #         end
+    #     end
+    # else # ndims(y) <= 2
+
+    # mode 0: all output: epshat,etahat,epsvarhat,etavarhat,Result_r,Result_N
+    # mode 1: no Result_r,Result_N
+    # mode 2: only epshat,etahat
+
+    #-- Prepare state space matrices and data --#
+    n, p, y, mis, anymis, allmis  = prepare_data(y)
+    H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
+
+    if mode in (0,1):
+        #-- Kalman filter --#
+        d,Fns,v,invF,K,L,RQ,QRt = _kalman(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
+
+        #-- Disturbance smoothing backwards recursion --#
+        m   = model['a1']['shape'][0]
+        rr  = Q[0].shape[0]
+        r   = np.matrix(np.zeros((m,1)))
+        N   = np.matrix(np.zeros((m,m)))
+        epshat      = np.zeros((p,n))
+        epsvarhat   = np.zeros((p,p,n))
+        etahat      = np.zeros((rr,n))
+        etavarhat   = np.zeros((rr,rr,n))
+        if mode == 0:
+            Result_r = [None]*n
+            Result_N = [None]*n
+        for t in range(n-1,-1,-1):
+            if mode == 0:
+                Result_r[t] = r
+                Result_N[t] = N
+            etahat[:,[t]]    = QRt[t] * r
+            etavarhat[:,:,t] = Q[t] - QRt[t] * N * RQ[t]
+            if allmis[t]:
+                #-- Disturbance smoothing when all observations are missing --#
+                epshat[:,t] = 0
+                epsvarhat[:,:,t] = H[t].copy() #### TODO: What is epsvarhat when all missing?
+                r = T[t].T * r
+                N = T[t].T * N * T[t]
+            else:
+                if anymis[t]:
+                    # "Disable" parts of state space matrices that corresponds to missing elements in the observation vector
+                    Z[t]   = Z[t][~mis[:,t],:]
+                    H[t]   = H[t][np.ix_(~mis[:,t],~mis[:,t])]
+                if t > d or not Fns[t]:
+                    #-- Normal disturbance smoothing or when F_inf is zero --#
+                    epshat[~mis[:,t],t] = H[t] * (invF[t] * v[t] - K[t].T * r)
+                    epsvarhat[np.ix_(~mis[:,t],~mis[:,t],[t])] = H[t] - H[t] * (invF[t] + K[t].T * N * K[t]) * H[t]
+                    M = Z[t].T * invF[t]
+                    r = M * v[t] + L[t].T * r
+                    N = M * Z[t] + L[t].T * N * L[t]
+                else:
+                    #-- Exact initial disturbance smoothing when F_inf is nonsingular --#
+                    epshat[~mis[:,t],t] = -H[t] * K[t].T * r
+                    epsvarhat[np.ix_(~mis[:,t],~mis[:,t],[t])] = H[t] - H[t] * K[t].T * N * K[t] * H[t]
+                    r = L[t].T * r
+                    N = L[t].T * N * L[t]
+    # elif mode == 2:
+    #     [epshat etahat] = fastdisturbsmo_int(n, y, mis, anymis, allmis, Hdyn, Zdyn, Tdyn, ~issta(model.R), Qdyn, ~issta(model.c), Hmat, Zmat, Tmat, getmat(model.R), Qmat, getmat(model.c), a1, model.P1.mat, opt.tol);
+
+    if mode == 0:
+        return epshat,etahat,epsvarhat,etavarhat,Result_r,Result_N
+    elif mode == 1:
+        return epshat,etahat,epsvarhat,etavarhat
+    elif mode == 2:
+        return epshat,etahat
 
 def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
     # function [alphatilde epstilde etatilde alphaplus] = simsmo(y, model, N, varargin)
