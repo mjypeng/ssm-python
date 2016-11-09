@@ -152,17 +152,14 @@ plt.show()
 
 #-- Analysis of both front and rear seat passengers bivariate series --#
 y2  = seatbelt[1:3,:]
-n       = y2.shape[1]
-mis     = np.array(np.isnan(y2))
-anymis  = np.any(mis,0)
-allmis  = np.all(mis,0)
 
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
 bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
 opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
-Qirr  = ssm.f_psi_to_cov(2)(opt_x[:3])
-Qlvl  = ssm.f_psi_to_cov(2)(opt_x[3:6])
+bibstsm    = set_param(bibstsm,opt_x)
+Qirr  = bibstsm['H']['mat']
+Qlvl  = bibstsm['Q']['mat']
 
 fout.write('[Parameters estimated w/o intervention on front and rear seat bivariate series]\n')
 fout.write("Loglikelihood: %g.\n" % logL)
@@ -172,11 +169,12 @@ fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
 fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('\n')
 
-alphahat    = ssm.statesmo_int(1,n,y2[:,:169],mis,anymis,allmis,ssm.set_param(bibstsm,opt_x))[0]
-comhat      = signal(alphahat, bibstsm, [0,1,12,14]);
-lvlhat      = comhat(:, :, 1);
-seashat     = comhat(:, :, 2);
-reghat      = comhat(:, :, 3);
+mis,anymis,allmis = ssm.get_missing(y2[:,:169])
+alphahat    = ssm.statesmo_int(1,169,y2[:,:169],mis,anymis,allmis,ssm.set_param(bibstsm,opt_x))[0]
+comhat      = signal(alphahat, bibstsm, [0,2,24,28])
+lvlhat      = comhat[:,:,1]
+seashat     = comhat[:,:,2]
+reghat      = comhat[:,:,3]
 # figure('Name', 'Estimated components w/o intervention on front and rear seat bivariate series');
 # subplot(2, 2, 1), plot(time(1:169), lvlhat(1, :)+reghat(1, :)), hold all, scatter(time(1:169), y2(1, 1:169), 8, 'r', 's', 'filled'), hold off, title('Front seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([6 7.25]);
 # subplot(2, 2, 2), plot(time(1:169), lvlhat(1, :)), title('Front seat passenger level'), xlim([68 85]),% ylim([3.84 4.56]);

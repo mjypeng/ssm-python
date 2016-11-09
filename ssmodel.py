@@ -594,4 +594,4 @@ def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
 
     if x is not None: models.append(model_mvreg(p, x))
 
-    return models #model_cat(models)
+    return model_cat(models)
