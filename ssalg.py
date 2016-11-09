@@ -578,7 +578,7 @@ def estimate(y,model,x0,method=None,tol=DEFAULT_TOL):
     nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
 
     res     = minimize(nloglik,x0,method=method)
-    logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
+    logL    = -(nmis*p*np.log(2*np.pi) + res.fun) / 2
     AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
     BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
 

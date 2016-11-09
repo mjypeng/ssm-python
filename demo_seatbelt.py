@@ -213,48 +213,71 @@ else:
     plt.show()
 
 #-- Add intervention to both series --#
+bibstsm2i  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[True]])])
+opt_x,logL2i  = ssm.estimate(y2, bibstsm2i, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2]
+# opt_x,logL2i  = ssm.estimate(y2, bibstsm2i, np.log([0.0054,0.00857,0.00445,0.000256,0.000232,0.000225])/2)[:2]
+bibstsm2i  = ssm.set_param(bibstsm2i, opt_x)
+Qirr  = bibstsm2i['H']['mat']
+Qlvl  = bibstsm2i['Q']['mat']
+alphahat2i,V2i    = ssm.statesmo(1, y2, bibstsm2i)[:2]
 
-# bibstsm2i           = [bibstsm ssm_mvintv(2, size(y2, 2), 'step', 170)];
-# [bibstsm2i logL2i]  = estimate(y2, bibstsm2i, [0.0054 0.00857 0.00445 0.000256 0.000232 0.000225], [], 'fmin', 'bfgs', 'disp', 'off');
-# [alphahat2i V2i]    = statesmo(y2, bibstsm2i);
-# fprintf(1, '[Parameters estimated w/ intervention on both series]\n');
-# fprintf(1, 'Loglikelihood: %g.\n', logL2i);
-# fprintf(1, 'Irregular disturbance   Level disturbance\n');
-# fprintf(1, fline, bibstsm2i.param([1 3 4 6]));
-# fprintf(1, fline, bibstsm2i.param([3 2 6 5]));
-# fprintf(1, 'Level shift intervention:\n');
-# fprintf(1, '        Coefficient     R. m. s. e.     t-value\n');
-# fprintf(1, 'front   %-14.5g  %-14.5g  %g\n', alphahat2i(end-1, end), realsqrt(V2i(end-1, end-1, end)), alphahat2i(end-1, end)/realsqrt(V2i(end-1, end-1, end)));
-# fprintf(1, 'rear    %-14.5g  %-14.5g  %g\n\n', alphahat2i(end, end), realsqrt(V2i(end, end, end)), alphahat2i(end, end)/realsqrt(V2i(end, end, end)));
+fout.write('[Parameters estimated w/ intervention on both series]\n')
+fout.write("Loglikelihood: %g.\n" % logL2i)
+fout.write('Irregular disturbance   Level disturbance\n')
+fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
+fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
+fout.write('Level shift intervention:\n')
+fout.write('        Coefficient     R. m. s. e.     t-value\n')
+fout.write("front   %-14.5g  %-14.5g  %g\n" % (alphahat2i[-2,-1],np.sqrt(V2i[-2,-2,-1]), alphahat2i[-2,-1]/np.sqrt(V2i[-2,-2,-1])))
+fout.write("rear    %-14.5g  %-14.5g  %g\n\n" % (alphahat2i[-1,-1],np.sqrt(V2i[-1,-1,-1]), alphahat2i[-1,-1]/np.sqrt(V2i[-1,-1,-1])))
 
-# % Add intervention only to front seat passenger series
-# bibstsmi            = [bibstsm ssm_mvintv(2, size(y2, 2), {'step' 'null'}, 170)];
-# [bibstsmi logLi]    = estimate(y2, bibstsmi, [0.00539 0.00856 0.00445 0.000266 0.000235 0.000232]);
-# [alphahati Vi]      = statesmo(y2, bibstsmi);
-# fprintf(1, '[Parameters estimated w/ intervention only on front seat series]\n');
-# fprintf(1, 'Loglikelihood: %g.\n', logLi);
-# fprintf(1, 'Irregular disturbance   Level disturbance\n');
-# fprintf(1, fline, bibstsmi.param([1 3 4 6]));
-# fprintf(1, fline, bibstsmi.param([3 2 6 5]));
-# fprintf(1, 'Level shift intervention:\n');
-# fprintf(1, '        Coefficient     R. m. s. e.     t-value\n');
-# fprintf(1, 'front   %-14.5g  %-14.5g  %g\n\n', alphahati(end, end), realsqrt(Vi(end, end, end)), alphahati(end, end)/realsqrt(Vi(end, end, end)));
+#-- Add intervention only to front seat passenger series --#
+bibstsmi  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[False]])])
+opt_x,logLi  = ssm.estimate(y2, bibstsmi, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2] #np.log([0.00539,0.00856,0.00445,0.000266,0.000235,0.000232])/2)[:2]
+bibstsmi  = ssm.set_param(bibstsmi, opt_x)
+Qirr  = bibstsmi['H']['mat']
+Qlvl  = bibstsmi['Q']['mat']
+alphahati,Vi  = ssm.statesmo(1, y2, bibstsmi)[:2]
 
-# comhati     = signal(alphahati, bibstsmi);
-# lvlhati     = comhati(:, :, 1);
-# seashati    = comhati(:, :, 2);
-# reghati     = comhati(:, :, 3);
-# intvhati    = comhati(:, :, 4);
-# figure('Name', 'Estimated components w/ intervention only on front seat series');
-# subplot(2, 2, 1), plot(time(1:end-1), lvlhati(1, :)+reghati(1, :)+intvhati(1, :), 'DisplayName', 'est. level'), hold all, scatter(time(1:end-1), y2(1, :), 8, 'r', 's', 'filled', 'DisplayName', 'front seat'), hold off, title('Front seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([6 7.25]), legend('show');
-# subplot(2, 2, 2), plot(time(1:end-1), lvlhati(1, :)+intvhati(1, :)), title('Front seat passenger level'), xlim([68 85]),% ylim([3.84 4.56]);
-# subplot(2, 2, 3), plot(time(1:end-1), lvlhati(2, :)+reghati(2, :), 'DisplayName', 'est. level'), hold all, scatter(time(1:end-1), y2(2, :), 8, 'r', 's', 'filled', 'DisplayName', 'rear seat'), hold off, title('Rear seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([5.375 6.5]), legend('show');
-# subplot(2, 2, 4), plot(time(1:end-1), lvlhati(2, :)), title('Rear seat passenger level'), xlim([68 85]),% ylim([1.64 1.96]);
-# if ispc, set(gcf, 'WindowStyle', 'docked'); end
+fout.write('[Parameters estimated w/ intervention only on front seat series]\n')
+fout.write("Loglikelihood: %g.\n" % logLi)
+fout.write('Irregular disturbance   Level disturbance\n')
+fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
+fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
+fout.write('Level shift intervention:\n')
+fout.write('        Coefficient     R. m. s. e.     t-value\n')
+fout.write("front   %-14.5g  %-14.5g  %g\n\n" % (alphahati[-1,-1],np.sqrt(Vi[-1,-1,-1]),alphahati[-1,-1]/np.sqrt(Vi[-1,-1,-1])))
 
-# % figure('Name', 'Estimated components w/ intervention only on front seat series');
-# % subplot(2, 1, 1), plot(time(1:end-1), lvlhati(1, :)+reghati(1, :)+intvhati(1, :), 'DisplayName', 'est. level'), hold all, scatter(time(1:end-1), y2(1, :), 8, 'r', 's', 'filled', 'DisplayName', 'front seat'), hold off, title('Front seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([6 7.25]);
-# % subplot(2, 1, 2), plot(time(1:end-1), lvlhati(2, :)+reghati(2, :), 'DisplayName', 'est. level'), hold all, scatter(time(1:end-1), y2(2, :), 8, 'r', 's', 'filled', 'DisplayName', 'rear seat'), hold off, title('Rear seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([5.375 6.5]);
-# % if ispc, set(gcf, 'WindowStyle', 'docked'); end
+comhati   = ssm.signal(alphahati, bibstsmi, [2,22,4,1])
+lvlhati   = comhati[:,:,0]
+seashati  = comhati[:,:,1]
+reghati   = comhati[:,:,2]
+intvhati  = comhati[:,:,3]
+
+fig  = plt.figure(num='Estimated components w/ intervention only on front seat series')
+ax1  = plt.subplot(221)
+plt.plot(time[:-1], lvlhati[0,:]+reghati[0,:]+intvhati[0,:],label='est. level')
+plt.scatter(time[:-1], y2[0,:].squeeze(), 8, 'r', 's', 'filled', label='front seat')
+plt.title('Front seat passenger level (w/o seasonal)')
+plt.xlim([time[0],time[-2]]); plt.ylim([6,7.25]); plt.legend()
+ax2  = plt.subplot(222)
+plt.plot(time[:-1], lvlhati[0,:]+intvhati[0,:])
+plt.title('Front seat passenger level')
+plt.xlim([time[0],time[-2]]); # plt.ylim([3.84,4.56])
+ax3  = plt.subplot(223)
+plt.plot(time[:-1], lvlhati[1,:]+reghati[1,:], label='est. level')
+plt.scatter(time[:-1], y2[1,:].squeeze(), 8, 'r', 's', 'filled', label='rear seat')
+plt.title('Rear seat passenger level (w/o seasonal)')
+plt.xlim([time[0],time[-2]]); plt.ylim([5.375,6.5]); plt.legend()
+ax4  = plt.subplot(224)
+plt.plot(time[:-1], lvlhati[1,:])
+plt.title('Rear seat passenger level')
+plt.xlim([time[0],time[-2]]); # plt.ylim([1.64,1.96])
+
+if SILENT_OUTPUT:
+    plt.savefig('demo_seatbelt'+run_name+'_out07.png')
+    plt.close()
+else:
+    plt.show()
 
 if SILENT_OUTPUT: fout.close()

@@ -290,6 +290,7 @@ def model_mvreg(p, x, dep=None):
     # %           each observation with each regression variable.
     m0,n  = x.shape
     if dep is not None:
+    	dep = np.asarray(dep)
         m   = np.sum(dep)
         X   = [x[None,dep[i,:],:] for i in range(p)]
         Z   = mat_const([blkdiag(*[X[i][:,:,t] for i in range(p)]) for t in range(n)],dynamic=True)

@@ -1,0 +1,37 @@
+
+epsilon variance = 0.00341598, eta variance = 0.000935854, omega variance = 5.01091e-07.
+
+[Analysis on drivers series]
+Loglikelihood: 175.776
+Irregular variance: 0.00381319
+Level variance: 0.000255753
+Seasonal variance: 1.18019e-06
+Variable             Coefficient     R. m. s. e.     t-value
+petrol coefficient   -0.29259        0.097297        -3.0072
+level shift at 83.2  -0.23729        0.045845        -5.17595
+
+[Parameters estimated w/o intervention on front and rear seat bivariate series]
+Loglikelihood: 280.224.
+Irregular disturbance   Level disturbance
+0.0049971   0.003701    0.00013563  0.00011535
+0.003701    0.0075445   0.00011535  0.00011991
+
+[Parameters estimated w/ intervention on both series]
+Loglikelihood: 307.23.
+Irregular disturbance   Level disturbance
+0.0055878   0.0049857   0.00015555  -8.915e-05
+0.0049857   0.0088015   -8.915e-05  0.00015678
+Level shift intervention:
+        Coefficient     R. m. s. e.     t-value
+front   -0.32869        0.038937        -8.44166
+rear    0.023845        0.044229        0.539133
+
+[Parameters estimated w/ intervention only on front seat series]
+Loglikelihood: 286.218.
+Irregular disturbance   Level disturbance
+0.0075685   0.0053343   1.419e-05   -7.8851e-07
+0.0053343   0.0074773   -7.8851e-07  4.6308e-08
+Level shift intervention:
+        Coefficient     R. m. s. e.     t-value
+front   -0.2767         0.025283        -10.9439
+
