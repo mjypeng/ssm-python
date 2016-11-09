@@ -156,8 +156,9 @@ y2  = seatbelt[1:3,:]
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
 bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
-opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
-bibstsm    = set_param(bibstsm,opt_x)
+opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([1,1,0.5,0.2,0.2,0.1])/2,method=None)[:2]
+# opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2,method=None)[:2]
+bibstsm    = ssm.set_param(bibstsm,opt_x)
 Qirr  = bibstsm['H']['mat']
 Qlvl  = bibstsm['Q']['mat']
 
@@ -170,17 +171,37 @@ fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('\n')
 
 mis,anymis,allmis = ssm.get_missing(y2[:,:169])
-alphahat    = ssm.statesmo_int(1,169,y2[:,:169],mis,anymis,allmis,ssm.set_param(bibstsm,opt_x))[0]
-comhat      = signal(alphahat, bibstsm, [0,2,24,28])
-lvlhat      = comhat[:,:,1]
-seashat     = comhat[:,:,2]
-reghat      = comhat[:,:,3]
-# figure('Name', 'Estimated components w/o intervention on front and rear seat bivariate series');
-# subplot(2, 2, 1), plot(time(1:169), lvlhat(1, :)+reghat(1, :)), hold all, scatter(time(1:169), y2(1, 1:169), 8, 'r', 's', 'filled'), hold off, title('Front seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([6 7.25]);
-# subplot(2, 2, 2), plot(time(1:169), lvlhat(1, :)), title('Front seat passenger level'), xlim([68 85]),% ylim([3.84 4.56]);
-# subplot(2, 2, 3), plot(time(1:169), lvlhat(2, :)+reghat(2, :)), hold all, scatter(time(1:169), y2(2, 1:169), 8, 'r', 's', 'filled'), hold off, title('Rear seat passenger level (w/o seasonal)'), xlim([68 85]), ylim([5.375 6.5]);
-# subplot(2, 2, 4), plot(time(1:169), lvlhat(2, :)), title('Rear seat passenger level'), xlim([68 85]),% ylim([1.64 1.96]);
-# if ispc, set(gcf, 'WindowStyle', 'docked'); end
+alphahat    = ssm.statesmo_int(1,169,y2[:,:169],mis,anymis,allmis,bibstsm)[0]
+comhat      = ssm.signal(alphahat, bibstsm, [0,2,24,28])
+lvlhat      = comhat[:,:,0]
+seashat     = comhat[:,:,1]
+reghat      = comhat[:,:,2]
+
+fig  = plt.figure(num='Estimated components w/o intervention on front and rear seat bivariate series')
+ax1  = plt.subplot(221)
+plt.plot(time[:169], lvlhat[0,:]+reghat[0,:])
+plt.scatter(time[:169], y2[0,:169], 8, 'r', 's', 'filled')
+plt.title('Front seat passenger level (w/o seasonal)')
+plt.xlim([time[0],time[168]])
+plt.ylim([6,7.25])
+ax2  = plt.subplot(222)
+plt.plot(time[:169], lvlhat[0,:])
+plt.title('Front seat passenger level')
+plt.xlim([time[0],time[168]])
+# plt.ylim([3.84,4.56])
+ax3  = plt.subplot(223)
+plt.plot(time[:169], lvlhat[1,:]+reghat[1,:])
+plt.scatter(time[:169], y2[1,:169], 8, 'r', 's', 'filled')
+plt.title('Rear seat passenger level (w/o seasonal)')
+plt.xlim([time[0],time[168]])
+plt.ylim([5.375,6.5])
+ax4  = plt.subplot(224)
+plt.plot(time[:169], lvlhat[1,:])
+plt.title('Rear seat passenger level')
+plt.xlim([time[0],time[168]])
+# plt.ylim([1.64,1.96])
+
+plt.show()
 
 # % Add intervention to both series
 # bibstsm2i           = [bibstsm ssm_mvintv(2, size(y2, 2), 'step', 170)];

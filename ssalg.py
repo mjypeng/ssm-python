@@ -5,7 +5,7 @@ import numpy as np
 DEFAULT_TOL = 10**-7
 
 def get_missing(y):
-    # y is a 2D matrix n*p
+    # y is a 2D matrix n*p, missing data is currently not supported for 3D (batch mode)
     mis     = np.asarray(np.isnan(y))
     anymis  = np.any(mis,0)
     allmis  = np.all(mis,0)
@@ -15,7 +15,9 @@ def copy_mat(M,n):
     # Get a copy of state space matrix for state space algorithms
     return [M['mat'][t].copy() for t in range(n)] if M['dynamic'] else [M['mat'].copy()]*n
 
-def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
+def _kalman(mode, n,y,mis,anymis,allmis,
+    H, Z, T, R, Q, c, a, P, stationary, RQdyn,
+    tol=DEFAULT_TOL, log_diag=False):
     # mode:
     #   0 - all output.
     #   1 - Kalman filter.
@@ -61,18 +63,6 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
         Output_v, Output_invF, Output_K, Output_L, Output_logL_, Output_var_ = (True,)*6
     if log_diag: iter_log = ['']*n
 
-    #-- Prepare state space matrices --#
-    H   = copy_mat(model['H'],n)
-    Z   = copy_mat(model['Z'],n)
-    T   = copy_mat(model['T'],n)
-    R   = copy_mat(model['R'],n)
-    Q   = copy_mat(model['Q'],n)
-    c   = copy_mat(model['c'],n)
-    a   = model['a1']['mat'].copy()
-    P   = model['P1']['mat'].copy()
-    RQdyn  = model['R']['dynamic'] or model['Q']['dynamic']
-    RQRt   = [R[t]*(Q[t]*R[t].T) for t in range(n)] if RQdyn else [R[0]*(Q[0]*R[0].T)]*n
-
     #-- Initialization --#
     D       = (P == np.inf)
     init    = D.any() # use exact diffuse initialization if init = true.
@@ -82,7 +72,6 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
         P_inf = D.astype(float)
     else:
         d     = -1
-    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
     converged   = False
 
     #-- Preallocate Output Results --#
@@ -109,7 +98,8 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
     if Output_RQRt:
         Result_RQRt = [None]*n if RQdyn else [RQRt[0]]*n
 
-    Fns     = np.zeros(n,dtype=bool) # Is F_inf nonsingular for each iteration
+    Fns   = np.zeros(n,dtype=bool) # Is F_inf nonsingular for each iteration
+    RQRt  = [R[t]*(Q[t]*R[t].T) for t in range(n)] if RQdyn else [R[0]*(Q[0]*R[0].T)]*n
 
     #-- Kalman filter loop --#
     for t in range(n):
@@ -183,7 +173,7 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
                 if stationary and (abs(P-prevP) < tol).all(): converged = True
 
             #-- Kalman data filter --#
-            v  = y[~mis[:,t],t] - Z[t] * a
+            v  = y[~mis[:,t],t] - Z[t] * a # The convoluted indexing for y is required to ensure that a column vector is returned (instead of a row vector, which would mess up the shape of a)
             a  = c[t] + T[t] * a + K * v
 
         #-- Store results for this iteration (time point t) --#
@@ -229,6 +219,36 @@ def kalman_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL,log_diag=False):
     elif mode == 8: # loglikelihood gradient
         output = d,Fns,Result_v,Result_invF,Result_K,Result_L,Result_logL_+Result_var_,Result_var_
     return output + (iter_log,) if log_diag else output
+
+def kalman(y,model,tol=DEFAULT_TOL,log_diag=False):
+    #-- Prepare state space matrices and data --#
+    n   = y.shape[1]
+    mis,anymis,allmis = get_missing(y)
+    y   = np.asmatrix(y)
+    H   = copy_mat(model['H'],n)
+    Z   = copy_mat(model['Z'],n)
+    T   = copy_mat(model['T'],n)
+    R   = copy_mat(model['R'],n)
+    Q   = copy_mat(model['Q'],n)
+    c   = copy_mat(model['c'],n)
+    a1  = model['a1']['mat'].copy()
+    P1  = model['P1']['mat'].copy()
+    RQdyn       = model['R']['dynamic'] or model['Q']['dynamic']
+    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
+
+    a, P, d, v, invF = _kalman(1,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol=tol,log_diag=log_diag)
+
+    # Build ndarrays from list output
+    v   = np.array(np.concatenate(v,1))
+    F   = np.concatenate([np.array(x[:,:,None]) for x in invF],2)**-1
+
+    # Suppress output during diffuse initialization
+    a[:,:d+1]     = np.nan
+    P[:,:,:d+1]   = np.nan
+    v[:,:d+1]     = np.nan
+    F[:,:,:d+1]   = np.nan
+
+    return a, P, v, F
 
 def statesmo_int(mode,n,y,mis,anymis,allmis,model,tol=DEFAULT_TOL):
     # mode:
@@ -847,7 +867,7 @@ def signal(alpha, model, mcom, t0=0):
         for t in range(n):
             Z   = Zmat[t0 + t]
             for i in range(ncom):
-                ycom[:,t,i] = Z[:,mcom[i]:mcom[i+1]]*alpha[mcom[i]:mcom[i+1],[t]]
+                ycom[:,[t],i] = Z[:,mcom[i]:mcom[i+1]]*alpha[mcom[i]:mcom[i+1],[t]]
     else:
         p       = Zmat.shape[0]
         ycom    = np.zeros((p, n, ncom))

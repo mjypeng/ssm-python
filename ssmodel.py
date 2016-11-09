@@ -177,7 +177,7 @@ def set_param(model,x):
             i  += nparam
     return model
 
-def estimate(y,model,x0,method='Nelder-Mead'):
+def estimate(y,model,x0,method=None):
     #-- Get information about data --#
     p,n     = y.shape
     mis,anymis,allmis = get_missing(y)
@@ -186,12 +186,39 @@ def estimate(y,model,x0,method='Nelder-Mead'):
 
     #-- Estimate model parameters --#
     nloglik = lambda x: kalman_int(4,n,y,mis,anymis,allmis,set_param(model,x))[0]
-    res     = minimize(nloglik,x0,method='Nelder-Mead')
+    res     = minimize(nloglik,x0,method=method)
     logL    = -nmis * (p*np.log(2*np.pi) + res.fun) / 2
     AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
     BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
 
     return res.x,logL,AIC,BIC
+
+def validate_model(model):
+    MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
+    for M in MM:
+        if M not in model: return False
+        if 'dynamic' not in model[M]: return False
+        if 'constant' not in model[M]: return False
+        if 'shape' not in model[M]: return False
+        if model[M]['constant']:
+            if 'mat' not in model[M]: return False
+            m  = model[M]['mat']
+        else:
+            if 'func' not in model[M] or not callable(model[M]['func']): return False
+            if 'nparam' not in model[M]: return False
+            m  = model[M]['func']([0.0]*model[M]['nparam'])
+        if model[M]['dynamic']:
+            if len(model[M]['shape']) < 3: return False
+            if type(m) != list: return False
+            if model[M]['shape'][2] != len(m): return False
+            for i in range(len(m)):
+                if type(m[i]) != np.matrix: return False
+                if m[i].shape[0] != model[M]['shape'][0] or m[i].shape[1] != model[M]['shape'][1]: return False
+        else:
+            if len(model[M]['shape']) > 2 and model[M]['shape'][2] != 1: return False
+            if type(m) != np.matrix: return False
+            if m.shape[0] != model[M]['shape'][0] or m.shape[1] != model[M]['shape'][1]: return False
+    return True
 
 def model_llm():
     # Local linear model
