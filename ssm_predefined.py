@@ -37,7 +37,7 @@ def model_lpt(d,stochastic=True):
         'Z':  mat_const([[1.0] + [0.0]*d]),
         'T':  mat_const(np.triu(np.ones((d+1,)*2))),
         'R':  mat_const(np.eye(d+1) if stochastic else [[0.0]*d + [1.0]]),
-        'Q':  mat_var(d,False),
+        'Q':  mat_var(d+1,False),
         'c':  mat_const(np.zeros((d+1,1))),
         'a1': mat_const(np.zeros((d+1,1))),
         'P1': mat_const(np.diag([np.inf]*(d+1)))})
