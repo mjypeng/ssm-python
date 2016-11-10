@@ -377,31 +377,46 @@ def model_arma(p, q, mean=False):
             'shape':  (r+1,)*2,
             'func':   psi_to_ar,
             'nparam': p}
+        R0  = np.mat([[1.0]] + [[0.0]]*r)
+        if q == 1:
+            def psi_to_ma(x):
+                # bound variables: R0
+                theta   = x[0]/np.sqrt(1 + x[0]**2)
+                R0[1,0] = theta
+                return R0
+        elif q == 2:
+            def psi_to_ma(x):
+                # bound variables: R0
+                x      = np.asarray(x)
+                Y      = x/np.sqrt(1 + x**2)
+                theta  = [[(1-Y[1])*Y[0]],[Y[1]]]
+                R0[1:3,0] = theta
+                return R0
+        else:
+            def psi_to_ma(x):
+                # bound variables: R0, q
+                R0[1:q+1,0] = x
+                return R0
 
+    #     P1  = mat_const(np.diag([0.0]*r + [np.inf]))
 
-        R   = mat_const([[1.0]] + [[0.0]]*r)
-        P1  = mat_const(np.diag([0.0]*r + [np.inf]))
-        if p == 0:
-            Tmask = [];
-        else:
-            Tmask = [[true(p, 1); false(r-p+1, 1)] false(r+1, r)]; end
-        if q == 0:
-            Rmask = [];
-        else:
-            Rmask = [false; true(q, 1); false(r-q, 1)]; end
-        P1mask  = logical(blkdiag(ones(r), 0));
-    else:
-        Z   = mat_const([1.0] + [0.0]*(r-1))
-        T   = mat_const(np.bmat([[np.zeros((r-1,1)),np.eye(r-1)],[np.zeros((1,r))]]))
-        R   = [1; zeros(r-1, 1)];
-        P1  = zeros(r);
-        if p == 0:
-            Tmask = []
-        else:
-            Tmask = [[true(p, 1); false(r-p, 1)] false(r, r-1)]; end
-        if q == 0, Rmask = []; else Rmask = [false; true(q, 1); false(r-q-1, 1)]; end
-        P1mask  = true(r);
-    end
-    if nargout == 7, varargout = {Z T R P1 Tmask Rmask P1mask};
-    else varargout = {T R P1 Tmask Rmask P1mask}; end
+    #     if q == 0:
+    #         Rmask = [];
+    #     else:
+    #         Rmask = [false; true(q, 1); false(r-q, 1)]; end
+    #     P1mask  = logical(blkdiag(ones(r), 0));
+    # else:
+    #     Z   = mat_const([1.0] + [0.0]*(r-1))
+    #     T   = mat_const(np.bmat([[np.zeros((r-1,1)),np.eye(r-1)],[np.zeros((1,r))]]))
+    #     R   = [1; zeros(r-1, 1)];
+    #     P1  = zeros(r);
+    #     if p == 0:
+    #         Tmask = []
+    #     else:
+    #         Tmask = [[true(p, 1); false(r-p, 1)] false(r, r-1)]; end
+    #     if q == 0, Rmask = []; else Rmask = [false; true(q, 1); false(r-q-1, 1)]; end
+    #     P1mask  = true(r);
+    # end
+    # if nargout == 7, varargout = {Z T R P1 Tmask Rmask P1mask};
+    # else varargout = {T R P1 Tmask Rmask P1mask}; end
 
