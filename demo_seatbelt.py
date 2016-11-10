@@ -31,21 +31,20 @@ y       = seatbelt[[0],:]
 
 #-- Estimation of basic structural time series model --#
 bstsm   = ssm.model_stsm('level', 'trig1', 12) #ssm.model_cat([ssm.model_llm(),ssm.model_seasonal('trig1', 12)])
-opt_x   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2)[0]
-bstsm 	= ssm.set_param(bstsm, opt_x)
+bstsm   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)[0]
 fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n\n" % (bstsm['H']['mat'][0,0],bstsm['Q']['mat'][0,0],bstsm['Q']['mat'][1,1]))
 
 a,P,v,F         = ssm.kalman(y,bstsm)
-alphahat,V,r,N  = ssm.statesmo(1,y,bstsm)
+alphahat,V,r,N  = ssm.statesmo(y,bstsm)
 #-- Retrieve components --#
-ycom        = ssm.signal(a, bstsm, [1,11])
-lvl         = ycom[0,:].squeeze()
-seas        = ycom[1,:].squeeze()
-ycomhat     = ssm.signal(alphahat, bstsm, [1,11])
-lvlhat      = ycomhat[0,:].squeeze()
-seashat     = ycomhat[1,:].squeeze()
+ycom        = ssm.signal(a, bstsm)
+lvl         = ycom[0,:]
+seas        = ycom[1,:]
+ycomhat     = ssm.signal(alphahat, bstsm)
+lvlhat      = ycomhat[0,:]
+seashat     = ycomhat[1,:]
 
-irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(1,y,bstsm)
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(y,bstsm)
 irr       = irr.squeeze()
 epsvarhat = epsvarhat.squeeze()
 
@@ -83,7 +82,7 @@ else:
 u       = irr/np.sqrt(epsvarhat)
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
-comres  = ssm.signal(r, bstsm, [1,11])
+comres  = ssm.signal(r, bstsm)
 lvlres  = comres[0,:].squeeze()
 
 fig = plt.figure(num='Residuals')
@@ -106,13 +105,13 @@ else:
 #-- Adding explanatory variables and intervention to the model --#
 petrol   = seatbelt[[4],:]
 bstsmir  = ssm.model_cat([bstsm,ssm.model_intv(y.shape[1],'step',169),ssm.model_reg(petrol)])
-opt_x,logL  = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2)[:2]
-bstsmir  = ssm.set_param(bstsmir, opt_x)
+bstsmir,res = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
+logL     = res['logL']
 
-alphahatir,Vir  = ssm.statesmo(1,y,bstsmir)[:2]
-irrir           = ssm.disturbsmo(1,y,bstsmir)[0]
+alphahatir,Vir  = ssm.statesmo(y,bstsmir)[:2]
+irrir           = ssm.disturbsmo(y,bstsmir)[0]
 irrir   = irrir.squeeze()
-ycomir  = ssm.signal(alphahatir, bstsmir, [1,11,1,1])
+ycomir  = ssm.signal(alphahatir, bstsmir)
 lvlir   = np.sum(ycomir[[0,2,3],:],0).squeeze()
 seasir  = ycomir[1,:].squeeze()
 
@@ -144,7 +143,7 @@ if SILENT_OUTPUT:
 else:
     plt.show()
 
-irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(1,y,bstsmir)
+irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(y,bstsmir)
 r       = np.zeros((12,y.shape[1]))
 for t in range(y.shape[1]): r[:,[t]] = np.asmatrix(sqrtm(etavarhat[:,:,t])).I*etahat[:,[t]]
 comres  = ssm.signal(r, bstsm, [1,11])
@@ -170,9 +169,9 @@ y2  = seatbelt[1:3,:]
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
 bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
-opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2]
+bibstsm,res = ssm.estimate(y2[:,:169],bibstsm,np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
 # opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
-bibstsm    = ssm.set_param(bibstsm,opt_x)
+logL  = res['logL']
 Qirr  = bibstsm['H']['mat']
 Qlvl  = bibstsm['Q']['mat']
 
@@ -184,8 +183,8 @@ fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
 fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('\n')
 
-alphahat    = ssm.statesmo(1,y2[:,:169],bibstsm)[0]
-comhat      = ssm.signal(alphahat, bibstsm, [2,22,4])
+alphahat    = ssm.statesmo(y2[:,:169],bibstsm)[0]
+comhat      = ssm.signal(alphahat, bibstsm)
 lvlhat      = comhat[:,:,0]
 seashat     = comhat[:,:,1]
 reghat      = comhat[:,:,2]
@@ -214,12 +213,12 @@ else:
 
 #-- Add intervention to both series --#
 bibstsm2i  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[True]])])
-opt_x,logL2i  = ssm.estimate(y2, bibstsm2i, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2]
+bibstsm2i,res  = ssm.estimate(y2, bibstsm2i, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
 # opt_x,logL2i  = ssm.estimate(y2, bibstsm2i, np.log([0.0054,0.00857,0.00445,0.000256,0.000232,0.000225])/2)[:2]
-bibstsm2i  = ssm.set_param(bibstsm2i, opt_x)
+logL2i = res['logL']
 Qirr  = bibstsm2i['H']['mat']
 Qlvl  = bibstsm2i['Q']['mat']
-alphahat2i,V2i    = ssm.statesmo(1, y2, bibstsm2i)[:2]
+alphahat2i,V2i    = ssm.statesmo(y2, bibstsm2i)[:2]
 
 fout.write('[Parameters estimated w/ intervention on both series]\n')
 fout.write("Loglikelihood: %g.\n" % logL2i)
@@ -233,11 +232,11 @@ fout.write("rear    %-14.5g  %-14.5g  %g\n\n" % (alphahat2i[-1,-1],np.sqrt(V2i[-
 
 #-- Add intervention only to front seat passenger series --#
 bibstsmi  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[False]])])
-opt_x,logLi  = ssm.estimate(y2, bibstsmi, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2)[:2] #np.log([0.00539,0.00856,0.00445,0.000266,0.000235,0.000232])/2)[:2]
-bibstsmi  = ssm.set_param(bibstsmi, opt_x)
+bibstsmi,res  = ssm.estimate(y2, bibstsmi, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT) #np.log([0.00539,0.00856,0.00445,0.000266,0.000235,0.000232])/2)[:2]
+logLi  = res['logL']
 Qirr  = bibstsmi['H']['mat']
 Qlvl  = bibstsmi['Q']['mat']
-alphahati,Vi  = ssm.statesmo(1, y2, bibstsmi)[:2]
+alphahati,Vi  = ssm.statesmo(y2, bibstsmi)[:2]
 
 fout.write('[Parameters estimated w/ intervention only on front seat series]\n')
 fout.write("Loglikelihood: %g.\n" % logLi)
@@ -248,7 +247,7 @@ fout.write('Level shift intervention:\n')
 fout.write('        Coefficient     R. m. s. e.     t-value\n')
 fout.write("front   %-14.5g  %-14.5g  %g\n\n" % (alphahati[-1,-1],np.sqrt(Vi[-1,-1,-1]),alphahati[-1,-1]/np.sqrt(Vi[-1,-1,-1])))
 
-comhati   = ssm.signal(alphahati, bibstsmi, [2,22,4,1])
+comhati   = ssm.signal(alphahati, bibstsmi)
 lvlhati   = comhati[:,:,0]
 seashati  = comhati[:,:,1]
 reghati   = comhati[:,:,2]

@@ -6,22 +6,32 @@ from scipy.linalg import block_diag as blkdiag
 #---------------------------------------------------#
 #-- Functions for State Space Matrix Construction --#
 #---------------------------------------------------#
-def mat_const(mat,dynamic=False):
+def mat_const(mat,dynamic=False,trans=True):
+    """Construct a constant state space matrix.
+
+    dynamic --
+    trans -- True if this is a "transform" matrix (Z,T,R,c,a1), False if this is a "distribution" matrix (H,Q,P1)
+    """
     if dynamic:
         mat  = [np.asmatrix(x) for x in mat]
     else:
         mat  = np.asmatrix(mat)
+    if trans:
+        prop_name  = 'linear'
+    else:
+        prop_name  = 'gaussian'
     return {
-        'linear':   True,
+        trans:      True,
         'dynamic':  type(mat) == list,
         'constant': True,
-        'shape': mat[0].shape + (len(mat),) if type(mat) == list else mat.shape,
-        'mat': mat}
+        'shape':    mat[0].shape + (len(mat),) if type(mat) == list else mat.shape,
+        'mat':      mat}
 
 def f_psi_to_cov(p):
-    # Returns a function that generates a (full) covariance matrix from a standard parametrization vector psi
-    #   The covariance matrix is (p, p)
-    #   The expected parameter vector psi is (p*(p+1)/2,)
+    """Returns a function that generates a (full) covariance matrix from a standard parametrization vector psi
+    The covariance matrix is (p, p)
+    The expected parameter vector psi is (p*(p+1)/2,)
+    """
     mask  = np.nonzero(np.tril(np.ones((p,p),dtype=bool) & ~np.eye(p,dtype=bool)))
     def psi_to_cov(x):
         # bound variables: p,mask
@@ -36,10 +46,10 @@ def f_psi_to_cov(p):
     return psi_to_cov
 
 def mat_var(p=1,cov=True):
-    # Create a parametrized normal covariance matrix for use as state space matrix
-    #   p is the number of variables.
-    #   cov specifies complete covariance if true, or complete independence if false.
-
+    """Create a parametrized normal covariance matrix for use as state space matrix
+    p is the number of variables.
+    cov specifies complete covariance if true, or complete independence if false.
+    """
     #-- Construct function to generate model --#
     if p == 1:
         return {
@@ -67,8 +77,10 @@ def mat_var(p=1,cov=True):
             'nparam': p*(p+1)/2}
 
 def mat_dupvar(p, d, cov=True):
-    #   Each of the p variables have a single variance duplicated d times
-    #   cov = True indicates that there are covariances between the p variables, each of which are also duplicated d times
+    """
+    Each of the p variables have a single variance duplicated d times
+    cov = True indicates that there are covariances between the p variables, each of which are also duplicated d times
+    """
     if d == 1: return mat_var(p, cov)
 
     if cov:
@@ -102,14 +114,14 @@ def mat_dupvar(p, d, cov=True):
             'nparam': p}
 
 def mat_interlvar(p, q, cov):
-    # %MAT_INTERLVAR Create base matrices for q-interleaved variance noise.
-    # %   [m mmask] = MAT_INTERLVAR(p, q, cov)
-    # %       p is the number of variables.
-    # %       q is the number of variances affecting each variable.
-    # %       cov is a logical vector that specifies whether each q variances covary
-    # %           across variables. shape = (q,)
-    # %       The variances affecting any single given variable is always assumed to be
-    # %           independent.
+    """Create state space matrix for q-interleaved variance noise.
+    p is the number of variables.
+    q is the number of variances affecting each variable.
+    cov is a logical vector that specifies whether each q variances covary
+       across variables. shape = (q,)
+    The variances affecting any single given variable is always assumed to be
+       independent.
+    """
 
     if p == 1: return mat_var(q, False)
 
@@ -155,12 +167,15 @@ def mat_interlvar(p, q, cov):
         'nparam': nparam}
 
 def func_stat_to_dyn(func,n):
-    #-- helper function for mat_cat() --#
+    """helper function for mat_cat()"""
     # Nested functions inside a function can be defined multiple times, but any outside variables "bound" into the function will take the last value at the outer function exit, making multiple function definitions equivalent ...
     return lambda x: [func(x)]*n
 
 def mat_cat(M,mats):
-    # M is one of 'H','Z','T','R','Q','c','a1','P1'
+    """Concatenate state space matrices
+    M -- one of 'H','Z','T','R','Q','c','a1','P1'
+    mats -- list of state space matrices
+    """
     N        = len(mats)
     dynamic  = any([mats[i]['dynamic'] for i in range(N)])
     n        = max([mats[i]['shape'][2] if mats[i]['dynamic'] else 1 for i in range(N)])
@@ -257,13 +272,36 @@ def validate_model(model):
             if m.shape[0] != model[M]['shape'][0] or m.shape[1] != model[M]['shape'][1]: return False
     return True
 
+def model_from_mats(H_or_model,Z=None,T=None,R=None,Q=None,c=None,a1=None,P1=None):
+    """Construct a single component state space model from provided state space matrices
+    model_from_mats(model) or model_from_mats(H,Z,T,R,Q,c,a1,P1)
+    model -- A dictionary with keys 'H','Z','T','R','Q','c','a1','P1' pointing to individual state space matrices
+    """
+    if Z is None:  model = H_or_model
+    else:  model = {'H': H_or_model, 'Z': Z, 'T': T, 'R': R, 'Q': Q, 'c': c, 'a1': a1, 'P1': P1}
+    if not validate_model(model): raise TypeError('invalid combination of model matrices for model construction')
+    model['dynamic']  = np.any([model[M]['dynamic'] for M in ('H','Z','T','R','Q','c','a1','P1')])
+    model['n']  = min([model[M]['shape'][2] for M in ('H','Z','T','R','Q','c','a1','P1') if model[M]['dynamic']]) if model['dynamic'] else np.inf
+    model['p']  = model['Z']['shape'][0]
+    model['m']  = model['T']['shape'][0]
+    model['r']  = model['R']['shape'][1]
+    model['nparam'] = sum([model[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not model[M]['constant']])
+    model['mcom']   = [model['m']] # models built from model_from_mats are considered a single "component"
+    return model
+
 def model_cat(models):
-    # Combine state space models
+    """Concatenate state space models
+    models -- a list of state space models
+    Each model is considered a separate set of components
+    The final H matrix is taken from models[0]
+    """
     N  = len(models)
     final_model = {}
     final_model['H'] = models[0]['H']
     for M in ('Z','T','R','Q','c','a1','P1'):
         final_model[M] = mat_cat(M,[models[i][M] for i in range(N)])
+    final_model = model_from_mats(final_model)
+    final_model['mcom'] = [m for i in range(N) for m in models[i]['mcom']]
     return final_model
 
 #--------------------------------#

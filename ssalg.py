@@ -568,23 +568,30 @@ def loglik(y,model,tol=DEFAULT_TOL):
 
     return logL, fvar
 
-def estimate(y,model,x0,method=None,tol=DEFAULT_TOL):
+def estimate(y,model,x0,method=None,disp=False,tol=DEFAULT_TOL):
+    """
+    model is modified inplace but reference returned for convenience
+    """
     #-- Prepare state space matrices and data --#
     n, p, y, mis, anymis, allmis  = prepare_data(y)
     nmis    = n - sum(allmis)
-    w       = sum([model[M]['nparam'] for M in model.keys() if not model[M]['constant']])
+    w       = model['nparam']
 
     #-- Estimate model parameters --#
-    nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
+    _nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
 
-    res     = minimize(nloglik,x0,method=method)
-    logL    = -(nmis*p*np.log(2*np.pi) + res.fun) / 2
-    AIC     = (-2*logL + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-    BIC     = (-2*logL + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    res     = minimize(_nloglik,x0,method=method,options={'disp':disp})
 
-    return res.x,logL,AIC,BIC
+    model   = set_param(model,res.x)
+    Results = {'x': res.x}
+    Results['logL'] = -(nmis*p*np.log(2*np.pi) + res.fun) / 2
+    Results['AIC']  = (-2*Results['logL'] + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    Results['BIC']  = (-2*Results['logL'] + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    Results['niter'] = res.nit
 
-def statesmo(mode,y,model,tol=DEFAULT_TOL):
+    return model,Results
+
+def statesmo(y,model,mode=1,tol=DEFAULT_TOL):
     # mode:
     #   0 - all output.
     #   1 - state smoother.
@@ -680,7 +687,7 @@ def statesmo(mode,y,model,tol=DEFAULT_TOL):
     elif mode == 2: # ARMA EM
         return L,P,alphahat,V,Result_N
 
-def disturbsmo(mode,y,model,tol=DEFAULT_TOL):
+def disturbsmo(y,model,mode=1,tol=DEFAULT_TOL):
     # if ndims(y) > 2
     #     if any(mis[:]), warning('ssm:ssmodel:disturbsmo:BatchMissing', 'Batch operations with missing data not supported for MATLAB code, set ''usec'' to true.')
     #     %% Data preprocessing %%
@@ -846,7 +853,7 @@ def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
 
     return alphatilde,epstilde,etatilde,alphaplus
 
-def signal(alpha, model, mcom, t0=0):
+def signal(alpha, model, t0=0):
     # %@SSMODEL/SIGNAL Retrieve signal components.
     # %       alpha is the state sequence.
     # %       model is the linear Gaussian model to use.
@@ -858,8 +865,8 @@ def signal(alpha, model, mcom, t0=0):
     #     ycom    = signal_int_c(alpha, model.mcom, getmat_c(model.Z), ~issta(model.Z), t0, true);
     # else
     n       = alpha.shape[1]
-    ncom    = len(mcom)
-    mcom    = np.cumsum([0] + mcom)
+    ncom    = len(model['mcom'])
+    mcom    = np.cumsum([0] + model['mcom'])
     Zmat    = model['Z']['mat']
     if model['Z']['dynamic']:
         p       = Zmat[0].shape[0]
@@ -874,4 +881,4 @@ def signal(alpha, model, mcom, t0=0):
         for i in range(ncom):
             ycom[:,:,i] = Zmat[:,mcom[i]:mcom[i+1]]*alpha[mcom[i]:mcom[i+1],:]
 
-    return ycom.transpose((2,1,0)) if p == 1 else ycom
+    return ycom.transpose((2,1,0)).squeeze() if p == 1 else ycom

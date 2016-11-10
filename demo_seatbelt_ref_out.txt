@@ -1,37 +1,37 @@
 
-epsilon variance = 0.00341598, eta variance = 0.000935854, omega variance = 5.01091e-07.
+epsilon variance = 0.00341597, eta variance = 0.000935838, omega variance = 5.01094e-07.
 
 [Analysis on drivers series]
-Loglikelihood: 175.776
-Irregular variance: 0.00381319
-Level variance: 0.000255753
-Seasonal variance: 1.18019e-06
+Loglikelihood: 175.779
+Irregular variance: 0.00378627
+Level variance: 0.000267692
+Seasonal variance: 1.16213e-06
 Variable             Coefficient     R. m. s. e.     t-value
-petrol coefficient   -0.29259        0.097297        -3.0072
-level shift at 83.2  -0.23729        0.045845        -5.17595
+petrol coefficient   -0.2914         0.09832         -2.96378
+level shift at 83.2  -0.23773        0.046318        -5.13267
 
 [Parameters estimated w/o intervention on front and rear seat bivariate series]
-Loglikelihood: 280.224.
+Loglikelihood: 282.095.
 Irregular disturbance   Level disturbance
-0.0049971   0.003701    0.00013563  0.00011535
-0.003701    0.0075445   0.00011535  0.00011991
+0.0053135   0.0044165   0.00024651  0.00021834
+0.0044165   0.0083036   0.00021834  0.00022864
 
 [Parameters estimated w/ intervention on both series]
-Loglikelihood: 307.23.
+Loglikelihood: 321.895.
 Irregular disturbance   Level disturbance
-0.0055878   0.0049857   0.00015555  -8.915e-05
-0.0049857   0.0088015   -8.915e-05  0.00015678
+0.0054016   0.0044491   0.00025598  0.00022499
+0.0044491   0.0085665   0.00022499  0.00023216
 Level shift intervention:
         Coefficient     R. m. s. e.     t-value
-front   -0.32869        0.038937        -8.44166
-rear    0.023845        0.044229        0.539133
+front   -0.33704        0.049244        -6.84433
+rear    0.00089568      0.051814        0.0172865
 
 [Parameters estimated w/ intervention only on front seat series]
-Loglikelihood: 286.218.
+Loglikelihood: 336.756.
 Irregular disturbance   Level disturbance
-0.0075685   0.0053343   1.419e-05   -7.8851e-07
-0.0053343   0.0074773   -7.8851e-07  4.6308e-08
+0.0053832   0.0044634   0.0002666   0.00023075
+0.0044634   0.0085656   0.00023075  0.00023084
 Level shift intervention:
         Coefficient     R. m. s. e.     t-value
-front   -0.2767         0.025283        -10.9439
+front   -0.29995        0.040159        -7.46903
 

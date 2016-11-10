@@ -26,8 +26,7 @@ time    = range(1871,1971)
 
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
-opt_x     = ssm.estimate(y,llm,np.log([10000,5000])/2,method='Nelder-Mead')[0]
-llm       = ssm.set_param(llm,opt_x)
+llm       = ssm.estimate(y,llm,np.log([10000,5000])/2,method='Nelder-Mead',disp=not SILENT_OUTPUT)[0]
 logL,fvar = ssm.loglik(y,llm)
 
 fout.write("Loglikelihood = %g, variance = %g.\n" % (logL,fvar))
@@ -70,7 +69,7 @@ else:
     plt.show()
 
 #-- State smoothing --#
-alphahat,V,r,N    = ssm.statesmo(1,y,llm)
+alphahat,V,r,N    = ssm.statesmo(y,llm)
 # Reshape output for plotting
 alphahat = alphahat.squeeze()
 V        = V.squeeze()
@@ -102,7 +101,7 @@ else:
     plt.show()
 
 #-- Disturbance smoothing --#
-epshat,etahat,epsvarhat,etavarhat = ssm.disturbsmo(1,y,llm)
+epshat,etahat,epsvarhat,etavarhat = ssm.disturbsmo(y,llm)
 # Reshape output for plotting
 epshat = epshat.squeeze()
 etahat = etahat.squeeze()
@@ -166,7 +165,7 @@ for ii in range(NN):
 ymis    = y.astype(float).copy()
 ymis[:,range(21,41)+range(61,81)] = np.nan
 amis,Pmis        = ssm.kalman(ymis,llm)[:2]
-alphahatmis,Vmis = ssm.statesmo(1,ymis,llm)[:2]
+alphahatmis,Vmis = ssm.statesmo(ymis,llm)[:2]
 amis        = amis.squeeze()
 Pmis        = Pmis.squeeze()
 alphahatmis = alphahatmis.squeeze()
