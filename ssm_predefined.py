@@ -290,7 +290,7 @@ def model_mvreg(p, x, dep=None):
     # %           each observation with each regression variable.
     m0,n  = x.shape
     if dep is not None:
-    	dep = np.asarray(dep)
+        dep = np.asarray(dep)
         m   = np.sum(dep)
         X   = [x[None,dep[i,:],:] for i in range(p)]
         Z   = mat_const([blkdiag(*[X[i][:,:,t] for i in range(p)]) for t in range(n)],dynamic=True)
@@ -339,84 +339,88 @@ def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
 
     return model_cat(models)
 
-def model_arma(p, q, mean=False):
+def model_arma(p, q, arma_mean=False):
     # %MAT_ARMA Create base matrices for ARMA(p, q) models.
     # %   [Z T R P1 Tmask Rmask P1mask] = MAT_ARMA(p, q[, mean])
     # %   [T R P1 Tmask Rmask P1mask] = MAT_ARMA(p, q[, mean])
     # %       Set mean to true to create a model with mean.
-
     r   = max(p, q+1)
-    if mean:
+    H   = mat_const(np.zeros((1,1)),trans=False)
+    if arma_mean:
+        m    = r + 1
         Z    = mat_const([1.0] + [0.0]*r)
-        T_r  = np.bmat([[np.eye(r)],[np.mat([0.0]*(r-1)+[1.0])]]) # right side
-        T_lb = [[0.0]]*(r-p+1) # left side bottom
+        T0   = np.bmat([[np.zeros((r,1)),np.eye(r)],[np.mat([0.0]*r+[1.0])]])
+        R0   = np.mat([[1.0]] + [[0.0]]*r)
+    else:
+        m    = r
+        Z    = mat_const([1.0] + [0.0]*(r-1))
+        T0   = np.bmat([[np.zeros((r-1,1)),np.eye(r-1)],[np.zeros((1,r))]])
+        R0   = np.mat([[1.0]] + [[0.0]]*(r-1))
+
+    def psi_to_arma(x):
+        # Bound variables: p, q, T0, R0, arma_mean, r
+        x1  = np.asarray(x[:p])
+        x2  = np.asarray(x[p:p+q])
+        x3  = x[-1]
         if p == 1:
-            def psi_to_ar(x):
-                # bound variables: T_lb, T_r
-                phi  = x[0]/np.sqrt(1 + x[0]**2)
-                T_l  = np.mat([[phi]] + T_lb)
-                return np.bmat([T_l,T_r])
+            T0[0,0]  = x1/np.sqrt(1 + x1**2)
         elif p == 2:
-            def psi_to_ar(x):
-                # bound variables: T_lb, T_r
-                x    = np.asarray(x)
-                Y    = x/np.sqrt(1 + x**2)
-                phi  = [[(1-Y[1])*Y[0]],[Y[1]]]
-                T_l  = np.mat(phi + T_lb)
-                return np.bmat([T_l,T_r])
-        else:
-            T_lb  = np.mat(T_lb)
-            def psi_to_ar(x):
-                # bound variables:
-                T_l  = np.bmat([[np.asarray(x)[:,None]],[T_lb]])
-                return np.bmat([T_l,T_r])
-        T   = {
-            'linear':   True,
-            'dynamic':  False,
-            'constant': False,
-            'shape':  (r+1,)*2,
-            'func':   psi_to_ar,
-            'nparam': p}
-        R0  = np.mat([[1.0]] + [[0.0]]*r)
+            Y        = x1/np.sqrt(1 + x1**2)
+            T0[0,0]  = (1 - Y[1]) * Y[0]
+            T0[1,0]  = Y[1]
+        elif p > 2:
+            T0[:p,0] = x1[:,None]
         if q == 1:
-            def psi_to_ma(x):
-                # bound variables: R0
-                theta   = x[0]/np.sqrt(1 + x[0]**2)
-                R0[1,0] = theta
-                return R0
+            R0[1,0]  = x2/np.sqrt(1 + x2**2)
         elif q == 2:
-            def psi_to_ma(x):
-                # bound variables: R0
-                x      = np.asarray(x)
-                Y      = x/np.sqrt(1 + x**2)
-                theta  = [[(1-Y[1])*Y[0]],[Y[1]]]
-                R0[1:3,0] = theta
-                return R0
+            Y        = x2/np.sqrt(1 + x2**2)
+            R0[1,0]  = (1 - Y[1]) * Y[0]
+            R0[2,0]  = Y[1]
+        elif q > 2:
+            R0[1:q+1,0] = x2[:,None]
+        zetavar  = np.exp(2*x3)
+        Q        = np.mat(zetavar)
+        if arma_mean:
+            Tr  = T0[:-1,:-1]
+            Rr  = R0[:-1,:]
+            P1  = zetavar*np.linalg.solve(np.eye(r*r) - np.kron(Tr,Tr),(Rr*Rr.T).reshape(r**2,1,order='F')).reshape(r,r,order='F')
+            P1  = np.asmatrix(blkdiag(P1,np.inf))
         else:
-            def psi_to_ma(x):
-                # bound variables: R0, q
-                R0[1:q+1,0] = x
-                return R0
+            P1  = zetavar*np.linalg.solve(np.eye(r*r) - np.kron(T0,T0),(R0*R0.T).reshape(r**2,1,order='F')).reshape(r,r,order='F')
+        return T0, R0, Q, P1
+    A  = {
+        'target': ('T','R','Q','P1'),
+        'func': psi_to_arma,
+        'nparam': p+q+1}
+    T  = {
+        'linear':   True,
+        'dynamic':  False,
+        'constant': False,
+        'shape':  (m,m),
+        'func':   None,
+        'nparam': 0}
+    R  = {
+        'linear':   True,
+        'dynamic':  False,
+        'constant': False,
+        'shape':  (m,1),
+        'func':   None,
+        'nparam': 0}
+    Q  = {
+        'gaussian': True,
+        'dynamic':  False,
+        'constant': False,
+        'shape':  (1,1),
+        'func':   None,
+        'nparam': 0}
+    c  = mat_const(np.zeros((m,1)))
+    a1 = mat_const(np.zeros((m,1)))
+    P1 = {
+        'gaussian': True,
+        'dynamic':  False,
+        'constant': False,
+        'shape':  (m,m),
+        'func':   None,
+        'nparam': 0}
 
-    #     P1  = mat_const(np.diag([0.0]*r + [np.inf]))
-
-    #     if q == 0:
-    #         Rmask = [];
-    #     else:
-    #         Rmask = [false; true(q, 1); false(r-q, 1)]; end
-    #     P1mask  = logical(blkdiag(ones(r), 0));
-    # else:
-    #     Z   = mat_const([1.0] + [0.0]*(r-1))
-    #     T   = mat_const(np.bmat([[np.zeros((r-1,1)),np.eye(r-1)],[np.zeros((1,r))]]))
-    #     R   = [1; zeros(r-1, 1)];
-    #     P1  = zeros(r);
-    #     if p == 0:
-    #         Tmask = []
-    #     else:
-    #         Tmask = [[true(p, 1); false(r-p, 1)] false(r, r-1)]; end
-    #     if q == 0, Rmask = []; else Rmask = [false; true(q, 1); false(r-q-1, 1)]; end
-    #     P1mask  = true(r);
-    # end
-    # if nargout == 7, varargout = {Z T R P1 Tmask Rmask P1mask};
-    # else varargout = {T R P1 Tmask Rmask P1mask}; end
-
+    return model_from_mats(H,Z,T,R,Q,c,a1,P1,A)

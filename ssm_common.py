@@ -246,6 +246,14 @@ def mat_cat(M,mats):
 #-- Functions for State Space Model Construction --#
 #--------------------------------------------------#
 def validate_model(model):
+    if 'A' in model:
+        if 'target' not in model['A']: return False
+        if 'func' not in model['A']: return False
+        if 'nparam' not in model['A']: return False
+        m  = model['A']['func']([0.0]*model['A']['nparam'])
+        for j in range(len(m)):
+            model[model['A']['target'][j]]['mat']  = m[j]
+
     MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
     for M in MM:
         if M not in model: return False
@@ -256,9 +264,14 @@ def validate_model(model):
             if 'mat' not in model[M]: return False
             m  = model[M]['mat']
         else:
-            if 'func' not in model[M] or not callable(model[M]['func']): return False
-            if 'nparam' not in model[M]: return False
-            m  = model[M]['func']([0.0]*model[M]['nparam'])
+            if 'func' not in model[M]: return False
+            if model[M]['func'] is None:
+                if 'mat' not in model[M]: return False
+                m  = model[M]['mat']
+            elif not callable(model[M]['func']): return False
+            else:
+                if 'nparam' not in model[M]: return False
+                m  = model[M]['func']([0.0]*model[M]['nparam'])
         if model[M]['dynamic']:
             if len(model[M]['shape']) < 3: return False
             if type(m) != list: return False
@@ -272,20 +285,22 @@ def validate_model(model):
             if m.shape[0] != model[M]['shape'][0] or m.shape[1] != model[M]['shape'][1]: return False
     return True
 
-def model_from_mats(H_or_model,Z=None,T=None,R=None,Q=None,c=None,a1=None,P1=None):
+def model_from_mats(H_or_model,Z=None,T=None,R=None,Q=None,c=None,a1=None,P1=None,A=None):
     """Construct a single component state space model from provided state space matrices
     model_from_mats(model) or model_from_mats(H,Z,T,R,Q,c,a1,P1)
     model -- A dictionary with keys 'H','Z','T','R','Q','c','a1','P1' pointing to individual state space matrices
     """
     if Z is None:  model = H_or_model
-    else:  model = {'H': H_or_model, 'Z': Z, 'T': T, 'R': R, 'Q': Q, 'c': c, 'a1': a1, 'P1': P1}
+    else:
+        model = {'H': H_or_model, 'Z': Z, 'T': T, 'R': R, 'Q': Q, 'c': c, 'a1': a1, 'P1': P1}
+        if A is not None:  model['A'] = A
     if not validate_model(model): raise TypeError('invalid combination of model matrices for model construction')
     model['dynamic']  = np.any([model[M]['dynamic'] for M in ('H','Z','T','R','Q','c','a1','P1')])
     model['n']  = min([model[M]['shape'][2] for M in ('H','Z','T','R','Q','c','a1','P1') if model[M]['dynamic']]) if model['dynamic'] else np.inf
     model['p']  = model['Z']['shape'][0]
     model['m']  = model['T']['shape'][0]
     model['r']  = model['R']['shape'][1]
-    model['nparam'] = sum([model[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not model[M]['constant']])
+    model['nparam'] = sum([model[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not model[M]['constant']]) + (model['A']['nparam'] if 'A' in model else 0)
     model['mcom']   = [model['m']] # models built from model_from_mats are considered a single "component"
     return model
 
@@ -294,6 +309,7 @@ def model_cat(models):
     models -- a list of state space models
     Each model is considered a separate set of components
     The final H matrix is taken from models[0]
+    Concatenation of models with 'A' is not supported yet
     """
     N  = len(models)
     final_model = {}
@@ -335,8 +351,15 @@ def prepare_model(model,n):
 def set_param(model,x):
     # The model is modified inplace, but reference returned for convenience
     i  = 0
+    if 'A' in model:
+        target  = model['A']['target']
+        nparam  = model['A']['nparam']
+        m       = model['A']['func'](x[:nparam])
+        for j in range(len(m)):
+            model[target[j]]['mat']  = m[j]
+        i       = nparam
     for M in ('H','Z','T','R','Q','c'):
-        if not model[M]['constant']:
+        if not model[M]['constant'] and model[M]['func'] is not None:
             nparam  = model[M]['nparam']
             model[M]['mat'] = model[M]['func'](x[i:i+nparam])
             i  += nparam
