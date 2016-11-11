@@ -26,7 +26,7 @@ time    = range(1871,1971)
 
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
-llm       = ssm.estimate(y,llm,np.log([10000,5000])/2,method='Nelder-Mead',disp=not SILENT_OUTPUT)[0]
+llm       = ssm.estimate(y,llm,np.log([10000,5000])/2,method='Nelder-Mead',options={'disp':not SILENT_OUTPUT})[0]
 logL,fvar = ssm.loglik(y,llm)
 
 fout.write("Loglikelihood = %g, variance = %g.\n" % (logL,fvar))

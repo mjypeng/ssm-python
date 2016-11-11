@@ -31,7 +31,7 @@ y       = seatbelt[[0],:]
 
 #-- Estimation of basic structural time series model --#
 bstsm   = ssm.model_stsm('level', 'trig1', 12) #ssm.model_cat([ssm.model_llm(),ssm.model_seasonal('trig1', 12)])
-bstsm   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)[0]
+bstsm   = ssm.estimate(y, bstsm, np.log([0.003,0.0009,5e-7])/2, method='Nelder-Mead',options={'disp':not SILENT_OUTPUT})[0]
 fout.write("epsilon variance = %g, eta variance = %g, omega variance = %g.\n\n" % (bstsm['H']['mat'][0,0],bstsm['Q']['mat'][0,0],bstsm['Q']['mat'][1,1]))
 
 a,P,v,F         = ssm.kalman(y,bstsm)
@@ -105,7 +105,7 @@ else:
 #-- Adding explanatory variables and intervention to the model --#
 petrol   = seatbelt[[4],:]
 bstsmir  = ssm.model_cat([bstsm,ssm.model_intv(y.shape[1],'step',169),ssm.model_reg(petrol)])
-bstsmir,res = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
+bstsmir,res = ssm.estimate(y, bstsmir, np.log([0.004,0.00027,1e-6])/2, method='Nelder-Mead',options={'disp':not SILENT_OUTPUT})
 logL     = res['logL']
 
 alphahatir,Vir  = ssm.statesmo(y,bstsmir)[:2]
@@ -169,7 +169,7 @@ y2  = seatbelt[1:3,:]
 #-- Bivariate basic structural time series model with regression variables --#
 # petrol and kilometer travelled, before intervention
 bibstsm    = ssm.model_mvstsm(2,[True,True,False],'level','trig fixed',12,x=seatbelt[3:5,:])
-bibstsm,res = ssm.estimate(y2[:,:169],bibstsm,np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
+bibstsm,res = ssm.estimate(y2[:,:169],bibstsm,np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead',options={'disp':not SILENT_OUTPUT})
 # opt_x,logL = ssm.estimate(y2[:,:169],bibstsm,np.log([0.00531,0.0083,0.00441,0.000247,0.000229,0.000218])/2)[:2]
 logL  = res['logL']
 Qirr  = bibstsm['H']['mat']
@@ -213,7 +213,7 @@ else:
 
 #-- Add intervention to both series --#
 bibstsm2i  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[True]])])
-bibstsm2i,res  = ssm.estimate(y2, bibstsm2i, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT)
+bibstsm2i,res  = ssm.estimate(y2, bibstsm2i, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead',options={'disp':not SILENT_OUTPUT})
 # opt_x,logL2i  = ssm.estimate(y2, bibstsm2i, np.log([0.0054,0.00857,0.00445,0.000256,0.000232,0.000225])/2)[:2]
 logL2i = res['logL']
 Qirr  = bibstsm2i['H']['mat']
@@ -232,7 +232,7 @@ fout.write("rear    %-14.5g  %-14.5g  %g\n\n" % (alphahat2i[-1,-1],np.sqrt(V2i[-
 
 #-- Add intervention only to front seat passenger series --#
 bibstsmi  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[False]])])
-bibstsmi,res  = ssm.estimate(y2, bibstsmi, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead', disp=not SILENT_OUTPUT) #np.log([0.00539,0.00856,0.00445,0.000266,0.000235,0.000232])/2)[:2]
+bibstsmi,res  = ssm.estimate(y2, bibstsmi, np.log([0.1,0.1,0.05,0.02,0.02,0.01])/2, method='Nelder-Mead',options={'disp':not SILENT_OUTPUT}) #np.log([0.00539,0.00856,0.00445,0.000266,0.000235,0.000232])/2)[:2]
 logLi  = res['logL']
 Qirr  = bibstsmi['H']['mat']
 Qlvl  = bibstsmi['Q']['mat']

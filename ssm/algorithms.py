@@ -568,7 +568,7 @@ def loglik(y,model,tol=DEFAULT_TOL):
 
     return logL, fvar
 
-def estimate(y,model,x0,method=None,maxiter=1000,maxfev=800,disp=False,tol=DEFAULT_TOL):
+def estimate(y,model,x0,method=None,options=None,tol=DEFAULT_TOL):
     """
     model is modified inplace but reference returned for convenience
     """
@@ -580,7 +580,7 @@ def estimate(y,model,x0,method=None,maxiter=1000,maxfev=800,disp=False,tol=DEFAU
     #-- Estimate model parameters --#
     _nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
 
-    result  = minimize(_nloglik,x0,method=method,options={'maxiter':maxiter,'maxfev':maxfev,'disp':disp})
+    result  = minimize(_nloglik,x0,method=method,options=options)
 
     model   = set_param(model,result.x)
 
