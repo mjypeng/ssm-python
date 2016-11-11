@@ -281,43 +281,76 @@ def mat_cat(mode,mats):
         M['nparam'] = nparam
     return ssmat(**M)
 
+class ssmodel(dict):
+    """ Represents a state space model.
+    Attributes
+    ----------
+    H :
+    Z :
+    T :
+    R :
+    Q :
+    c :
+    a1 :
+    P1 :
+    """
+    def __init__(self,**kwargs):
+        """Construct a single component state space model from provided state space matrices.
+        keyword arguments : 'H','Z','T','R','Q','c','a1','P1', and optionally 'A' pointing to individual state space matrices
+        """
+        self['H']   = kwargs['H']
+        self['Z']   = kwargs['Z']
+        self['T']   = kwargs['T']
+        self['R']   = kwargs['R']
+        self['Q']   = kwargs['Q']
+        self['c']   = kwargs['c']
+        self['a1']  = kwargs['a1']
+        self['P1']  = kwargs['P1']
+        if 'A' in kwargs:  self['A'] = kwargs['A']
+        if not self: raise TypeError('invalid combination of model matrices for model construction')
+        self['dynamic']  = np.any([self[M]['dynamic'] for M in ('H','Z','T','R','Q','c','a1','P1')])
+        self['n']  = min([self[M]['shape'][2] for M in ('H','Z','T','R','Q','c','a1','P1') if self[M]['dynamic']]) if self['dynamic'] else np.inf
+        self['p']  = self['Z']['shape'][0]
+        self['m']  = self['T']['shape'][0]
+        self['r']  = self['R']['shape'][1]
+        self['nparam'] = sum([self[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not self[M]['constant']]) + (self['A']['nparam'] if 'A' in self else 0)
+        self['mcom']   = [self['m']] # models built from ssmat constructor are considered a single "component"
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+                
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+    def __repr__(self):
+        props  = (('A',) if 'A' in self else ()) + ('H','Z','T','R','Q','c','a1','P1')
+        m  = max(map(len, list(props))) + 1
+        return '\n'.join([x.rjust(m) + ': ' + repr(self[x]) for x in props])
+
+    def __dir__(self):
+        return list(self.keys())
+
+    def __nonzero__(self):
+        if 'A' in self:
+            if 'target' not in self['A']: return False
+            if 'func' not in self['A']: return False
+            if 'nparam' not in self['A']: return False
+            m  = self['A']['func']([0.0]*self['A']['nparam'])
+            for j in range(len(m)):
+                self[self['A']['target'][j]]['mat']  = m[j]
+
+        MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
+        for M in MM:
+            if M not in self: return False
+            if not self[M]: return False
+        return True
+
 #--------------------------------------------------#
 #-- Functions for State Space Model Construction --#
 #--------------------------------------------------#
-def validate_model(model):
-    if 'A' in model:
-        if 'target' not in model['A']: return False
-        if 'func' not in model['A']: return False
-        if 'nparam' not in model['A']: return False
-        m  = model['A']['func']([0.0]*model['A']['nparam'])
-        for j in range(len(m)):
-            model[model['A']['target'][j]]['mat']  = m[j]
-
-    MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
-    for M in MM:
-        if M not in model: return False
-        if not model[M]: return False
-    return True
-
-def model_from_mats(H_or_model,Z=None,T=None,R=None,Q=None,c=None,a1=None,P1=None,A=None):
-    """Construct a single component state space model from provided state space matrices
-    model_from_mats(model) or model_from_mats(H,Z,T,R,Q,c,a1,P1)
-    model -- A dictionary with keys 'H','Z','T','R','Q','c','a1','P1' pointing to individual state space matrices
-    """
-    if Z is None:  model = H_or_model
-    else:
-        model = {'H': H_or_model, 'Z': Z, 'T': T, 'R': R, 'Q': Q, 'c': c, 'a1': a1, 'P1': P1}
-        if A is not None:  model['A'] = A
-    if not validate_model(model): raise TypeError('invalid combination of model matrices for model construction')
-    model['dynamic']  = np.any([model[M]['dynamic'] for M in ('H','Z','T','R','Q','c','a1','P1')])
-    model['n']  = min([model[M]['shape'][2] for M in ('H','Z','T','R','Q','c','a1','P1') if model[M]['dynamic']]) if model['dynamic'] else np.inf
-    model['p']  = model['Z']['shape'][0]
-    model['m']  = model['T']['shape'][0]
-    model['r']  = model['R']['shape'][1]
-    model['nparam'] = sum([model[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not model[M]['constant']]) + (model['A']['nparam'] if 'A' in model else 0)
-    model['mcom']   = [model['m']] # models built from model_from_mats are considered a single "component"
-    return model
-
 def model_cat(models):
     """Concatenate state space models
     models -- a list of state space models
@@ -333,7 +366,7 @@ def model_cat(models):
         elif M in ('c','a1'): mode = 'v'
         else: mode = 'd'
         final_model[M] = mat_cat(mode,[models[i][M] for i in range(N)])
-    final_model = model_from_mats(final_model)
+    final_model = ssmodel(**final_model)
     final_model['mcom'] = [m for i in range(N) for m in models[i]['mcom']]
     return final_model
 

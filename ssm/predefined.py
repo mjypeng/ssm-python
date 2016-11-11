@@ -19,28 +19,20 @@ def x_intv(n, intv_type, tau):
 
 def model_llm():
     # Local linear model
-    return model_from_mats({
-        'H':  mat_var(1),
-        'Z':  mat_const(1),
-        'T':  mat_const(1),
-        'R':  mat_const(1),
-        'Q':  mat_var(1),
-        'c':  mat_const(0),
-        'a1': mat_const(0),
-        'P1': mat_const(np.inf)})
+    return ssmodel(H=mat_var(1), Z=mat_const(1), T=mat_const(1),
+        R=mat_const(1), Q=mat_var(1), c=mat_const(0),
+        a1=mat_const(0), P1=mat_const(np.inf))
 
 def model_lpt(d,stochastic=True):
     # Local polynomial trend model
     #   d is the order of the polynomial trend.
-    return model_from_mats({
-        'H':  mat_var(1),
-        'Z':  mat_const([[1.0] + [0.0]*d]),
-        'T':  mat_const(np.triu(np.ones((d+1,)*2))),
-        'R':  mat_const(np.eye(d+1) if stochastic else [[0.0]*d + [1.0]]),
-        'Q':  mat_var(d+1,False),
-        'c':  mat_const(np.zeros((d+1,1))),
-        'a1': mat_const(np.zeros((d+1,1))),
-        'P1': mat_const(np.diag([np.inf]*(d+1)))})
+    return ssmodel(H=mat_var(1), Z=mat_const([[1.0] + [0.0]*d]),
+        T=mat_const(np.triu(np.ones((d+1,)*2))),
+        R=mat_const(np.eye(d+1) if stochastic else [[0.0]*d + [1.0]]),
+        Q=mat_var(d+1,False),
+        c=mat_const(np.zeros((d+1,1))),
+        a1=mat_const(np.zeros((d+1,1))),
+        P1=mat_const(np.diag([np.inf]*(d+1))))
 
 def model_seasonal(seasonal_type,s):
     """Create seasonal components.
@@ -67,8 +59,9 @@ def model_seasonal(seasonal_type,s):
         T     = mat_const(np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.asmatrix(1),np.zeros((1,s-1))]]))
         R     = mat_const(np.eye(s))
         W     = np.matrix(np.eye(s) - np.tile(1.0/s,(s,s)))
-        Q     = { 'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s,s),
-            'func': lambda x: np.exp(2*x[0])*W, 'nparam': 1}
+        Q     = ssmat(transform=False, dynamic=False, constant=False,
+                      shape=(s,s), func=lambda x: np.exp(2*x[0])*W,
+                      nparam=1)
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         #-- Trigonometric seasonal component --#
         m  = s-1
@@ -88,8 +81,9 @@ def model_seasonal(seasonal_type,s):
             #-- Trigonometric seasonal component with equal variance --#
             R  = mat_const(np.eye(s-1))
             W  = np.matrix(np.eye(s-1))
-            Q  = {'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s-1,s-1),
-                'func': lambda x: np.exp(2*x[0])*W, 'nparam': 1}
+            Q  = ssmat(transform=False, dynamic=False, constant=False,
+                       shape=(s-1,s-1), func=lambda x: np.exp(2*x[0])*W,
+                       nparam=1)
         elif seasonal_type == 'trig2':
             R  = mat_const(np.eye(s-1))
             Q  = mat_var(s-1,False)
@@ -97,36 +91,33 @@ def model_seasonal(seasonal_type,s):
             R  = mat_const(np.zeros((s-1,0)))
             Q  = mat_const(np.zeros((0,0)))
 
-    c   = mat_const(np.zeros((m,1)))
-    a1  = mat_const(np.zeros((m,1)))
-    P1  = mat_const(np.diag([np.inf]*m))
-
-    return model_from_mats(mat_var(1),Z,T,R,Q,c,a1,P1)
+    return ssmodel(H=mat_var(1), Z=Z, T=T, R=R, Q=Q,
+                   c=mat_const(np.zeros((m,1))),
+                   a1=mat_const(np.zeros((m,1))),
+                   P1=mat_const(np.diag([np.inf]*m)))
 
 def model_intv(n, intv_type, tau, dynamic=False):
     x  = x_intv(n, intv_type, tau)
     m  = x.shape[0]
-    return model_from_mats({
-        'H':  mat_var(1),
-        'Z':  mat_const(np.dsplit(x[None,:,:],n),dynamic=True),
-        'T':  mat_const(np.eye(m)),
-        'R':  mat_const(np.eye(m) if dynamic else np.zeros((m,0))),
-        'Q':  mat_var(1) if dynamic else mat_const(np.zeros((0,0))),
-        'c':  mat_const(np.zeros((m,1))),
-        'a1': mat_const(np.zeros((m,1))),
-        'P1': mat_const(np.diag([np.inf]*m))})
+    return ssmodel(H=mat_var(1),
+        Z=mat_const(np.dsplit(x[None,:,:],n),dynamic=True),
+        T=mat_const(np.eye(m)),
+        R=mat_const(np.eye(m) if dynamic else np.zeros((m,0))),
+        Q=mat_var(1) if dynamic else mat_const(np.zeros((0,0))),
+        c=mat_const(np.zeros((m,1))),
+        a1=mat_const(np.zeros((m,1))),
+        P1=mat_const(np.diag([np.inf]*m)))
 
 def model_reg(x, dynamic=False):
     m,n  = x.shape
-    return model_from_mats({
-        'H':  mat_var(1),
-        'Z':  mat_const(np.dsplit(x[None,:,:],n),dynamic=True),
-        'T':  mat_const(np.eye(m)),
-        'R':  mat_const(np.eye(m) if dynamic else np.zeros((m,0))),
-        'Q':  mat_var(1) if dynamic else mat_const(np.zeros((0,0))),
-        'c':  mat_const(np.zeros((m,1))),
-        'a1': mat_const(np.zeros((m,1))),
-        'P1': mat_const(np.diag([np.inf]*m))})
+    return ssmodel(H=mat_var(1),
+        Z=mat_const(np.dsplit(x[None,:,:],n),dynamic=True),
+        T=mat_const(np.eye(m)),
+        R=mat_const(np.eye(m) if dynamic else np.zeros((m,0))),
+        Q=mat_var(1) if dynamic else mat_const(np.zeros((0,0))),
+        c=mat_const(np.zeros((m,1))),
+        a1=mat_const(np.zeros((m,1))),
+        P1=mat_const(np.diag([np.inf]*m)))
 
 def model_stsm(lvl, seasonal_type, s, cycle=False, x=None):
     # %SSM_STSM Create SSMODEL object for structural time series models.
@@ -142,36 +133,37 @@ def model_stsm(lvl, seasonal_type, s, cycle=False, x=None):
     elif lvl == 'trend':
         model1 = model_lpt(1)
     else:
-        model1 = {
-            'H':  mat_var(1),
-            'Z':  mat_const(np.zeros((1,0))),
-            'T':  mat_const(np.zeros((0,0))),
-            'R':  mat_const(np.zeros((0,0))),
-            'Q':  mat_const(np.zeros((0,0))),
-            'c':  mat_const(np.zeros((0,1))),
-            'a1': mat_const(np.zeros((0,1))),
-            'P1': mat_const(np.zeros((0,0)))}
+        model1 = ssmodel(H=mat_var(1),
+            Z=mat_const(np.zeros((1,0))),
+            T=mat_const(np.zeros((0,0))),
+            R=mat_const(np.zeros((0,0))),
+            Q=mat_const(np.zeros((0,0))),
+            c=mat_const(np.zeros((0,1))),
+            a1=mat_const(np.zeros((0,1))),
+            P1=mat_const(np.zeros((0,0))))
 
     model2 = model_seasonal(seasonal_type,s)
 
-    # if cycle, model = [model ssm_cycle]; end
-    # if nargin >= 5, model = [model ssm_reg(varargin{:})]; end
+    models = [model1,model2]
 
-    return model_cat([model1,model2])
+    # if cycle, model = [model ssm_cycle]; end
+    if x is not None: models.append(model_reg(x))
+
+    return model_cat(models)
 
     # return {
-    #     'H':  model1['H'],
-    #     'Z':  mat_const(np.hstack([model1['Z']['mat'],model2['Z']['mat']])),
-    #     'T':  mat_const(blkdiag(model1['T']['mat'],model2['T']['mat'])),
-    #     'R':  mat_const(blkdiag(model1['R']['mat'],model2['R']['mat'])),
-    #     'Q':  {
+    #     'H=model1['H'],
+    #     'Z=mat_const(np.hstack([model1['Z']['mat'],model2['Z']['mat']])),
+    #     'T=mat_const(blkdiag(model1['T']['mat'],model2['T']['mat'])),
+    #     'R=mat_const(blkdiag(model1['R']['mat'],model2['R']['mat'])),
+    #     'Q={
     #         'gaussian': True,
     #         'dynamic':  False,
     #         'constant': False,
     #         'shape': np.asarray(model1['Q']['shape']) + np.asarray(model2['Q']['shape']),
     #         'func': lambda x: np.asmatrix(blkdiag(model1['Q']['func'](x[:model1['Q']['nparam']]),model2['Q']['func'](x[model1['Q']['nparam']:]))),
     #         'nparam': model1['Q']['nparam'] + model2['Q']['nparam']},
-    #     'c':  mat_const(np.vstack([model1['c']['mat'],model2['c']['mat']])),
+    #     'c=mat_const(np.vstack([model1['c']['mat'],model2['c']['mat']])),
     #     'a1': mat_const(np.vstack([model1['a1']['mat'],model2['a1']['mat']])),
     #     'P1': mat_const(blkdiag(model1['P1']['mat'],model2['P1']['mat']))}
 
@@ -182,15 +174,14 @@ def model_mvllm(p, cov=(True,True)):
     # %       cov specifies complete covariance if true, or complete independence if
     # %           false, cov[0] for observation disturbance, cov[1] for state transition disturbance
     #   Each of the p variables evolve independently, as indicated by identity matrices for Z,T,R, so the only source of dependence is in the disturbances. Hence it does not make much sense to have cov all False, since it is equivalent to running p local linear models separately.
-    return model_from_mats({
-        'H':  mat_var(p, cov[0]),
-        'Z':  mat_const(np.eye(p)),
-        'T':  mat_const(np.eye(p)),
-        'R':  mat_const(np.eye(p)),
-        'Q':  mat_var(p, cov[1]),
-        'c':  mat_const(np.zeros((p,1))),
-        'a1': mat_const(np.zeros((p,1))),
-        'P1': mat_const(np.diag([np.inf]*p))})
+    return ssmodel(H=mat_var(p, cov[0]),
+        Z=mat_const(np.eye(p)),
+        T=mat_const(np.eye(p)),
+        R=mat_const(np.eye(p)),
+        Q=mat_var(p, cov[1]),
+        c=mat_const(np.zeros((p,1))),
+        a1=mat_const(np.zeros((p,1))),
+        P1=mat_const(np.diag([np.inf]*p)))
 
 def model_mvllt(p, cov=(True,True,True)):
     # %SSM_MVLLT Create SSMODEL object for multivariate local level trend model.
@@ -198,22 +189,21 @@ def model_mvllt(p, cov=(True,True,True)):
     # %       p is the number of variables.
     # %       cov specifies complete covariance if true, or complete independence if
     # %           false, extended to a vector where needed.
-    return model_from_mats({
-        'H':  mat_var(p, cov[0]),
-        'Z':  mat_const(np.kron(np.eye(p), [1,0])),
-        'T':  mat_const(np.kron(np.eye(p), [[1,1],[0,1]])),
-        'R':  mat_const(np.eye(p*2)),
-        'Q':  mat_interlvar(p, 2, cov[1:]),
-        'c':  mat_const(np.zeros((p*2,1))),
-        'a1': mat_const(np.zeros((p*2,1))),
-        'P1': mat_const(np.diag([np.inf]*(p*2)))})
+    return ssmodel(H=mat_var(p, cov[0]),
+        Z=mat_const(np.kron(np.eye(p), [1,0])),
+        T=mat_const(np.kron(np.eye(p), [[1,1],[0,1]])),
+        R=mat_const(np.eye(p*2)),
+        Q=mat_interlvar(p, 2, cov[1:]),
+        c=mat_const(np.zeros((p*2,1))),
+        a1=mat_const(np.zeros((p*2,1))),
+        P1=mat_const(np.diag([np.inf]*(p*2))))
 
 def model_mvseasonal(p, cov, seasonal_type, s):
-    # %SSM_MVSEASONAL Create SSMODEL object for multivariate seasonal component.
-    # %   model = SSM_MVSEASONAL(p, cov, seasonal_type, s)
-    # %       p is the number of variables.
-    # %       cov specifies complete covariance if true, or complete independence if
-    # %           false
+    """Create multivariate seasonal component.
+    model_mvseasonal(p, cov, seasonal_type, s)
+    p is the number of variables.
+    cov specifies complete covariance if true, or complete independence if false
+    """
     if seasonal_type in ('dummy','dummy fixed'):
         m   = p*(s-1)
         Z   = mat_const(np.kron(np.eye(p),np.hstack([np.matrix(1),np.zeros((1,s-2))])))
@@ -231,8 +221,10 @@ def model_mvseasonal(p, cov, seasonal_type, s):
         T   = np.kron(np.eye(p),np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.matrix(1),np.zeros((1,s-1))]]))
         R   = np.eye(p*s)
         W   = np.matrix(np.eye(s) - np.tile(1.0/s,(s,s)))
-        Q   = {'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s*p,)*2,
-            'func': lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W), 'nparam': p}
+        Q   = ssmat(transform=False, dynamic=False, constant=False,
+                    shape=(s*p,)*2,
+                    func=lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W),
+                    nparam=p)
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         m   = p*(s-1)
         Z   = mat_const(np.kron(np.eye(p),np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))])))
@@ -257,15 +249,10 @@ def model_mvseasonal(p, cov, seasonal_type, s):
             R  = mat_const(np.zeros((p*(s-1),0)))
             Q  = mat_const(np.zeros((0,0)))
 
-    return model_from_mats({
-        'H':  mat_var(p,True),
-        'Z':  Z,
-        'T':  T,
-        'R':  R,
-        'Q':  Q,
-        'c':  mat_const(np.zeros((m,1))),
-        'a1': mat_const(np.zeros((m,1))),
-        'P1': mat_const(np.diag([np.inf]*m))})
+    return ssmodel(H=mat_var(p,True), Z=Z, T=T, R=R, Q=Q,
+        c=mat_const(np.zeros((m,1))),
+        a1=mat_const(np.zeros((m,1))),
+        P1=mat_const(np.diag([np.inf]*m)))
 
 def model_mvreg(p, x, dep=None):
     # %MAT_MVREG Create base matrices for multivariate regression component.
@@ -282,15 +269,13 @@ def model_mvreg(p, x, dep=None):
     else:
         m   = p*m0
         Z   = mat_const(np.dsplit(np.kron(np.eye(p)[:,:,None],x[None,:,:]),n),dynamic=True)
-    return model_from_mats({
-        'H':  mat_var(p,True),
-        'Z':  Z,
-        'T':  mat_const(np.eye(m)),
-        'R':  mat_const(np.zeros((m,0))),
-        'Q':  mat_const(np.zeros((0,0))),
-        'c':  mat_const(np.zeros((m,1))),
-        'a1': mat_const(np.zeros((m,1))),
-        'P1': mat_const(np.diag([np.inf]*m))})
+    return ssmodel(H=mat_var(p,True), Z=Z,
+        T=mat_const(np.eye(m)),
+        R=mat_const(np.zeros((m,0))),
+        Q=mat_const(np.zeros((0,0))),
+        c=mat_const(np.zeros((m,1))),
+        a1=mat_const(np.zeros((m,1))),
+        P1=mat_const(np.diag([np.inf]*m)))
 
 def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
     # %SSM_MVSTSM Create SSMODEL object for multivariate structural time series models.
@@ -304,15 +289,14 @@ def model_mvstsm(p, cov, lvl, seasonal_type, s, cycle=False, x=None):
     elif lvl == 'trend':
         model1 = model_mvllt(p, cov[:3]); cov = cov[3:]
     else:
-        model1 = {
-            'H': mat_var(p,cov[0]),
-            'Z': mat_const(np.zeros((p,0))),
-            'T': mat_const(np.zeros((0,0))),
-            'R': mat_const(np.zeros((0,0))),
-            'Q': mat_const(np.zeros((0,0))),
-            'c': mat_const(np.zeros((0,1))),
-            'a1': mat_const(np.zeros((0,1))),
-            'P1': mat_const(np.zeros((0,0)))}; cov = cov[1:]
+        model1 = ssmodel(H=mat_var(p,cov[0]),
+            Z=mat_const(np.zeros((p,0))),
+            T=mat_const(np.zeros((0,0))),
+            R=mat_const(np.zeros((0,0))),
+            Q=mat_const(np.zeros((0,0))),
+            c=mat_const(np.zeros((0,1))),
+            a1=mat_const(np.zeros((0,1))),
+            P1=mat_const(np.zeros((0,0)))); cov = cov[1:]
 
     model2  = model_mvseasonal(p, cov[0], seasonal_type, s)
 
@@ -373,12 +357,16 @@ def model_arma(p, q, arma_mean=False):
         else:
             P1  = zetavar*np.linalg.solve(np.eye(r*r) - np.kron(T0,T0),(R0*R0.T).reshape(r**2,1,order='F')).reshape(r,r,order='F')
         return T0, R0, Q, P1
-    A  = {'target': ('T','R','Q','P1'), 'func': psi_to_arma, 'nparam': p+q+1}
-    T  = {'linear': True, 'dynamic': False, 'constant': False, 'shape': (m,m), 'func': None, 'nparam': 0}
-    R  = {'linear': True, 'dynamic': False, 'constant': False, 'shape': (m,1), 'func': None, 'nparam': 0}
-    Q  = {'gaussian': True, 'dynamic': False, 'constant': False, 'shape': (1,1), 'func': None, 'nparam': 0}
-    c  = mat_const(np.zeros((m,1)))
-    a1 = mat_const(np.zeros((m,1)))
-    P1 = {'gaussian': True, 'dynamic': False, 'constant': False, 'shape': (m,m), 'func': None, 'nparam': 0}
 
-    return model_from_mats(H,Z,T,R,Q,c,a1,P1,A)
+    return ssmodel(A={'target':('T','R','Q','P1'),'func':psi_to_arma,'nparam':p+q+1},
+        H=H, Z=Z,
+        T=ssmat(transform=True, dynamic=False, constant=False,
+                   shape=(m,m), func=None, nparam=0),
+        R=ssmat(transform=True, dynamic=False, constant=False,
+                   shape=(m,1), func=None, nparam=0),
+        Q=ssmat(transform=False, dynamic=False, constant=False,
+                   shape=(1,1), func=None, nparam=0),
+        c=mat_const(np.zeros((m,1))),
+        a1=mat_const(np.zeros((m,1))),
+        P1=ssmat(transform=False, dynamic=False, constant=False,
+                   shape=(m,m), func=None, nparam=0))
