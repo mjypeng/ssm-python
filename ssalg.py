@@ -585,8 +585,8 @@ def estimate(y,model,x0,method=None,disp=False,tol=DEFAULT_TOL):
     model   = set_param(model,res.x)
     Results = {'x': res.x}
     Results['logL'] = -(nmis*p*np.log(2*np.pi) + res.fun) / 2
-    Results['AIC']  = (-2*Results['logL'] + 2*(w + sum(model['P1']['mat'] == np.inf)))/nmis
-    Results['BIC']  = (-2*Results['logL'] + np.log(nmis)*(w + sum(model['P1']['mat'] == np.inf)))/nmis
+    Results['AIC']  = (-2*Results['logL'] + 2*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
+    Results['BIC']  = (-2*Results['logL'] + np.log(nmis)*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
     Results['niter'] = res.nit
 
     return model,Results

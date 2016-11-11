@@ -67,13 +67,8 @@ def model_seasonal(seasonal_type,s):
         T     = mat_const(np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.asmatrix(1),np.zeros((1,s-1))]]))
         R     = mat_const(np.eye(s))
         W     = np.matrix(np.eye(s) - np.tile(1.0/s,(s,s)))
-        Q     = {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (s,s),
-            'func': lambda x: np.exp(2*x[0])*W,
-            'nparam': 1}
+        Q     = { 'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s,s),
+            'func': lambda x: np.exp(2*x[0])*W, 'nparam': 1}
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         #-- Trigonometric seasonal component --#
         m  = s-1
@@ -93,13 +88,8 @@ def model_seasonal(seasonal_type,s):
             #-- Trigonometric seasonal component with equal variance --#
             R  = mat_const(np.eye(s-1))
             W  = np.matrix(np.eye(s-1))
-            Q  = {
-                'gaussian': True,
-                'dynamic':  False,
-                'constant': False,
-                'shape': (s-1,s-1),
-                'func': lambda x: np.exp(2*x[0])*W,
-                'nparam': 1}
+            Q  = {'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s-1,s-1),
+                'func': lambda x: np.exp(2*x[0])*W, 'nparam': 1}
         elif seasonal_type == 'trig2':
             R  = mat_const(np.eye(s-1))
             Q  = mat_var(s-1,False)
@@ -241,13 +231,8 @@ def model_mvseasonal(p, cov, seasonal_type, s):
         T   = np.kron(np.eye(p),np.bmat([[np.zeros((s-1,1)),np.eye(s-1)],[np.matrix(1),np.zeros((1,s-1))]]))
         R   = np.eye(p*s)
         W   = np.matrix(np.eye(s) - np.tile(1.0/s,(s,s)))
-        Q   = {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (s*p,)*2,
-            'func': lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W),
-            'nparam': p}
+        Q   = {'gaussian': True, 'dynamic':  False, 'constant': False, 'shape': (s*p,)*2,
+            'func': lambda x: np.kron(np.diag(np.exp(2*np.asarray(x))),W), 'nparam': p}
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         m   = p*(s-1)
         Z   = mat_const(np.kron(np.eye(p),np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))])))
@@ -388,39 +373,12 @@ def model_arma(p, q, arma_mean=False):
         else:
             P1  = zetavar*np.linalg.solve(np.eye(r*r) - np.kron(T0,T0),(R0*R0.T).reshape(r**2,1,order='F')).reshape(r,r,order='F')
         return T0, R0, Q, P1
-    A  = {
-        'target': ('T','R','Q','P1'),
-        'func': psi_to_arma,
-        'nparam': p+q+1}
-    T  = {
-        'linear':   True,
-        'dynamic':  False,
-        'constant': False,
-        'shape':  (m,m),
-        'func':   None,
-        'nparam': 0}
-    R  = {
-        'linear':   True,
-        'dynamic':  False,
-        'constant': False,
-        'shape':  (m,1),
-        'func':   None,
-        'nparam': 0}
-    Q  = {
-        'gaussian': True,
-        'dynamic':  False,
-        'constant': False,
-        'shape':  (1,1),
-        'func':   None,
-        'nparam': 0}
+    A  = {'target': ('T','R','Q','P1'), 'func': psi_to_arma, 'nparam': p+q+1}
+    T  = {'linear': True, 'dynamic': False, 'constant': False, 'shape': (m,m), 'func': None, 'nparam': 0}
+    R  = {'linear': True, 'dynamic': False, 'constant': False, 'shape': (m,1), 'func': None, 'nparam': 0}
+    Q  = {'gaussian': True, 'dynamic': False, 'constant': False, 'shape': (1,1), 'func': None, 'nparam': 0}
     c  = mat_const(np.zeros((m,1)))
     a1 = mat_const(np.zeros((m,1)))
-    P1 = {
-        'gaussian': True,
-        'dynamic':  False,
-        'constant': False,
-        'shape':  (m,m),
-        'func':   None,
-        'nparam': 0}
+    P1 = {'gaussian': True, 'dynamic': False, 'constant': False, 'shape': (m,m), 'func': None, 'nparam': 0}
 
     return model_from_mats(H,Z,T,R,Q,c,a1,P1,A)
