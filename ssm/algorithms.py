@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from ssm_common import *
+from common import *
 from scipy.optimize import minimize
 
 DEFAULT_TOL = 10**-7

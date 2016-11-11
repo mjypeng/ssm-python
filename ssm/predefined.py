@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from ssm_common import *
+from common import *
 
 def x_intv(n, intv_type, tau):
     # %X_INTV Create regression variables for intervention components.
