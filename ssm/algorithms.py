@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from common import *
-from scipy.optimize import minimize
+from scipy.optimize import minimize, show_options
 
 DEFAULT_TOL = 10**-7
 
@@ -568,7 +568,7 @@ def loglik(y,model,tol=DEFAULT_TOL):
 
     return logL, fvar
 
-def estimate(y,model,x0,method=None,disp=False,tol=DEFAULT_TOL):
+def estimate(y,model,x0,method=None,maxiter=1000,maxfev=800,disp=False,tol=DEFAULT_TOL):
     """
     model is modified inplace but reference returned for convenience
     """
@@ -580,16 +580,16 @@ def estimate(y,model,x0,method=None,disp=False,tol=DEFAULT_TOL):
     #-- Estimate model parameters --#
     _nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
 
-    res     = minimize(_nloglik,x0,method=method,options={'disp':disp})
+    result  = minimize(_nloglik,x0,method=method,options={'maxiter':maxiter,'maxfev':maxfev,'disp':disp})
 
-    model   = set_param(model,res.x)
-    Results = {'x': res.x}
-    Results['logL'] = -(nmis*p*np.log(2*np.pi) + res.fun) / 2
-    Results['AIC']  = (-2*Results['logL'] + 2*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
-    Results['BIC']  = (-2*Results['logL'] + np.log(nmis)*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
-    Results['niter'] = res.nit
+    model   = set_param(model,result.x)
 
-    return model,Results
+    result.logL  = -(nmis*p*np.log(2*np.pi) + result.fun) / 2
+    result.AIC   = (-2*result.logL + 2*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
+    result.BIC   = (-2*result.logL + np.log(nmis)*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
+    if not result.success: sys.stderr.write('ssm.estimate:warning:minimizer failed to exit successfully\n')
+
+    return model,result
 
 def statesmo(y,model,mode=1,tol=DEFAULT_TOL):
     # mode:
