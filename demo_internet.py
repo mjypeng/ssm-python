@@ -2,6 +2,7 @@
 
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
 import ssm
 
 fout  = sys.stdout
@@ -27,51 +28,60 @@ for p in range(P+1):
     fout.write('%-4d' % p)
     for q in range(Q+1):
         model      = ssm.model_arma(p,q)
-        arma[p,q],res = ssm.estimate(y,model,np.log([0.3]*(model['nparam']-1)+[10])/2,method='Nelder-Mead',disp=False)
-        logL[p,q]  = res['logL']
-        AIC[p,q]   = res['AIC']
+        arma[p,q],res = ssm.estimate(y,model,[0.1]*(model['nparam']-1)+[np.log(10)/2],method='Nelder-Mead',options={'maxiter':4000,'maxfev':3000})
+        logL[p,q]  = res.logL
+        AIC[p,q]   = res.AIC
         fout.write("%-12g" % AIC[p,q])
     fout.write('\n')
 
-exit(0)
+i  = AIC.argmin(); temp = AIC.flat[i]; AIC.flat[i] = np.inf
+fout.write("ARMA(%d, %d) found to be the best model, " % np.unravel_index(i,AIC.shape))
+j  = AIC.argmin(); AIC.flat[i] = temp
+fout.write("ARMA(%d, %d) is the second best.\n\n" % np.unravel_index(j,AIC.shape))
 
-# [m i] = min(AIC(:)); temp = AIC(i); AIC(i) = Inf;
-# fprintf(1, 'ARMA(%d, %d) found to be the best model, ', mod(i-1, P+1), floor((i-1)/(P+1)));
-# [m j] = min(AIC(:)); AIC(i) = temp;
-# fprintf(1, 'ARMA(%d, %d) is the second best.\n\n', mod(j-1, P+1), floor((j-1)/(P+1)));
+#-- Model selection for data with missing values --#
+ymis  = y.copy()
+ymis[:,[6,16,26,36,46,56,66,72,73,74,75,76,86,96]] = np.nan
+fout.write('AIC for ARMA(p, q) models on data w/ missing observations:\n')
+fout.write('    ')
+for q in range(Q+1): fout.write("%-12d" % q)
+fout.write('\n')
 
-# %% Model selection for data with missing values %%
-# ymis        = y; ymis([6 16 26 36 46 56 66 72 73 74 75 76 86 96]) = NaN;
-# fprintf(1, 'AIC for ARMA(p, q) models on data w/ missing observations:\n');
-# fprintf(1, '    '); for q = 0:Q, fprintf(1, '%-12d', q); end; fprintf(1, '\n');
-# logLmis     = zeros(P+1, Q+1);
-# AICmis      = zeros(P+1, Q+1);
-# armamis     = cell(P+1, Q+1);
-# for p = 0 : P
-#     fprintf(1, '%-4d', p);
-#     for q = 0 : Q
-#         model                                           = ssm_arma(p, q);
-#         [armamis{p+1, q+1} logLmis(p+1, q+1) output]    = estimate(ymis, model, [repmat(-0.1, 1, model.w-1) 1], [], 'fmin', 'bfgs', 'disp', 'off');
-#         AICmis(p+1, q+1)                                = output.AIC;
-#         fprintf(1, '%-12g', AICmis(p+1, q+1));
-#     end
-#     fprintf(1, '\n');
-# end
-# [m i] = min(AICmis(:)); temp = AICmis(i); AICmis(i) = Inf;
-# fprintf(1, 'ARMA(%d, %d) found to be the best model, ', mod(i-1, P+1), floor((i-1)/(P+1)));
-# [m j] = min(AICmis(:)); AICmis(i) = temp;
-# fprintf(1, 'ARMA(%d, %d) is the second best.\n\n', mod(j-1, P+1), floor((j-1)/(P+1)));
+logLmis     = np.zeros((P+1,Q+1))
+AICmis      = np.zeros((P+1,Q+1))
+armamis     = np.tile(None,(P+1,Q+1))
+for p in range(P+1):
+    fout.write('%-4d' % p)
+    for q in range(Q+1):
+        model  = ssm.model_arma(p,q)
+        armamis[p,q],res  = ssm.estimate(ymis,model,[-0.1]*(model['nparam']-1) + [np.log(1.0)/2],method='Nelder-Mead',options={'maxiter':4000,'maxfev':3000})
+        logLmis[p,q]      = res.logL
+        AICmis[p,q]       = res.AIC
+        fout.write("%-12g" % AICmis[p,q])
+    fout.write('\n')
 
-# %% Forecast with ARMA(1, 1) on the complete data %%
-# [armafore logL] = estimate(y, ssm_arma(1, 1), 0.1);
-# yf              = signal(kalman([y repmat(NaN, 1, 20)], armafore), armafore);
-# figure('Name', 'Internet series forecast');
-# plot(yf, 'DisplayName', 'forecast'), hold all, scatter(1:length(y), y, 10, 'r', 's', 'filled', 'DisplayName', 'data'), hold off, ylim([-15 15]), legend('show');
-# if ispc, set(gcf, 'WindowStyle', 'docked'); end
+i  = AICmis.argmin(); temp = AICmis.flat[i]; AICmis.flat[i] = np.inf
+fout.write("ARMA(%d, %d) found to be the best model, " % np.unravel_index(i,AICmis.shape))
+j  = AICmis.argmin(); AICmis.flat[i] = temp
+fout.write("ARMA(%d, %d) is the second best.\n\n" % np.unravel_index(j,AICmis.shape))
 
-# %% Forecast with ARMA(1, 1) on the data w/ missing values %%
-# [armafore logLmis]  = estimate(ymis, ssm_arma(1, 1), 0.1);
-# ymisf               = signal(kalman([ymis repmat(NaN, 1, 20)], armafore), armafore);
-# figure('Name', 'Internet series in-sample one-step and out-of-sample forecasts');
-# plot(ymisf), hold all, scatter(1:length(ymis), ymis, 10, 'r', 's', 'filled'), hold off, ylim([-15 15]);
-# if ispc, set(gcf, 'WindowStyle', 'docked'); end
+#-- Forecast with ARMA(1, 1) on the complete data --#
+armafore,res  = ssm.estimate(y,ssm.model_arma(1,1),[0.1,0.1,np.log(0.1)/2],method='Nelder-Mead',options={'maxiter':4000,'maxfev':3000})
+yf            = ssm.signal(ssm.kalman(np.bmat([y,np.tile(np.nan,(1,20))]), armafore)[0], armafore)
+fig  = plt.figure(num='Internet series forecast')
+plt.plot(yf.squeeze(), label='forecast')
+plt.scatter(range(1,y.shape[1]+1), y.squeeze(), 10, 'r', 's', 'filled', label='data')
+plt.title('Internet series forecast'); plt.ylim([-15,15]); plt.legend()
+
+plt.show()
+
+#-- Forecast with ARMA(1, 1) on the data w/ missing values --#
+armafore,res  = ssm.estimate(ymis, ssm.model_arma(1,1),[0.1,0.1,np.log(0.1)/2],method='Nelder-Mead',options={'maxiter':4000,'maxfev':3000})
+ymisf         = ssm.signal(ssm.kalman(np.bmat([ymis,np.tile(np.nan,(1,20))]), armafore)[0], armafore)
+fig  = plt.figure(num='Internet series in-sample one-step and out-of-sample forecasts')
+plt.plot(ymisf.squeeze(), label='forecast')
+plt.scatter(range(1,ymis.shape[1]+1), ymis.squeeze(), 10, 'r', 's', 'filled', label='data')
+plt.title('Internet series in-sample one-step and out-of-sample forecasts')
+plt.ylim([-15,15])
+
+plt.show()
