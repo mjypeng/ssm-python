@@ -3,6 +3,89 @@
 import numpy as np
 from scipy.linalg import block_diag as blkdiag
 
+class ssmat(dict):
+    """ Represents a state space matrix.
+    Attributes
+    ----------
+    transform : 
+    linear : 
+    gaussian : 
+    dynamic : 
+    constant : 
+    func : 
+    nparam : 
+    mat : 
+    """
+    def __init__(self, **kwargs):
+        self['transform']  = kwargs['transform']
+        if self['transform']:
+            self['linear']  = True
+        else:
+            self['gaussian']  = True
+        self['constant']  = kwargs['constant']
+        self['dynamic']   = kwargs['dynamic']
+        if self['constant']:
+            if self['dynamic']:
+                self['mat']   = [np.mat(x) for x in kwargs['mat']]
+                self['shape'] = self['mat'][0].shape + (len(self['mat']),)
+            else:
+                self['mat']   = np.mat(kwargs['mat'])
+                self['shape'] = self['mat'].shape
+        else:
+            self['shape']  = kwargs['shape']
+            self['func']   = kwargs['func']
+            self['nparam'] = kwargs['nparam']
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+    def __repr__(self):
+        props  = ('transform','linear' if self.transform else 'gaussian','dynamic','constant','shape') + (('mat',) if self.constant else ('func','nparam') + (('mat',) if 'mat' in self else ()))
+        m  = max(map(len, list(props))) + 1
+        return '\n'.join([x.rjust(m) + ': ' + repr(self[x]) for x in props])
+
+    def __dir__(self):
+        return list(self.keys())
+
+    def __nonzero__(self):
+        if 'transform' not in self: return False
+        if self['transform']:
+            if 'linear' not in self: return False
+        elif 'gaussian' not in self: return False
+        if 'dynamic' not in self: return False
+        if 'constant' not in self: return False
+        if 'shape' not in self: return False
+        if self['constant']:
+            if 'mat' not in self: return False
+            m  = self['mat']
+        else:
+            if 'func' not in self: return False
+            if self['func'] is None:
+                if 'mat' not in self: return False
+                m  = self['mat']
+            elif not callable(self['func']): return False
+            else:
+                if 'nparam' not in self: return False
+                m  = self['func']([0.0]*self['nparam'])
+        if self['dynamic']:
+            if len(self['shape']) < 3: return False
+            if type(m) != list: return False
+            if self['shape'][2] != len(m): return False
+            for i in range(len(m)):
+                if type(m[i]) != np.matrix: return False
+                if m[i].shape[0] != self['shape'][0] or m[i].shape[1] != self['shape'][1]: return False
+        else:
+            if len(self['shape']) > 2 and self['shape'][2] != 1: return False
+            if type(m) != np.matrix: return False
+            if m.shape[0] != self['shape'][0] or m.shape[1] != self['shape'][1]: return False
+        return True
+
 #---------------------------------------------------#
 #-- Functions for State Space Matrix Construction --#
 #---------------------------------------------------#
@@ -12,20 +95,7 @@ def mat_const(mat,dynamic=False,trans=True):
     dynamic --
     trans -- True if this is a "transform" matrix (Z,T,R,c,a1), False if this is a "distribution" matrix (H,Q,P1)
     """
-    if dynamic:
-        mat  = [np.asmatrix(x) for x in mat]
-    else:
-        mat  = np.asmatrix(mat)
-    if trans:
-        prop_name  = 'linear'
-    else:
-        prop_name  = 'gaussian'
-    return {
-        trans:      True,
-        'dynamic':  type(mat) == list,
-        'constant': True,
-        'shape':    mat[0].shape + (len(mat),) if type(mat) == list else mat.shape,
-        'mat':      mat}
+    return ssmat(transform=trans, constant=True, dynamic=dynamic, mat=mat)
 
 def f_psi_to_cov(p):
     """Returns a function that generates a (full) covariance matrix from a standard parametrization vector psi
@@ -52,29 +122,15 @@ def mat_var(p=1,cov=True):
     """
     #-- Construct function to generate model --#
     if p == 1:
-        return {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (1,1),
-            'func': lambda x: np.asmatrix(np.exp(2*x[0])),
-            'nparam': 1}
+        return ssmat(transform=False, dynamic=False, constant=False,
+            shape=(1,1), func=lambda x: np.mat(np.exp(2*x[0])), nparam=1)
     elif not cov:
-        return {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (p,p),
-            'func': lambda x: np.matrix(np.diag(np.exp(2*np.asarray(x)))),
-            'nparam': p}
+        return ssmat(transform=False, dynamic=False, constant=False,
+            shape=(p,p), func=lambda x: np.mat(np.diag(np.exp(2*np.asarray(x)))),
+            nparam=p)
     else:
-        return {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (p,p),
-            'func': f_psi_to_cov(p),
-            'nparam': p*(p+1)/2}
+        return ssmat(transform=False, dynamic=False, constant=False,
+            shape=(p,p), func=f_psi_to_cov(p), nparam=p*(p+1)/2)
 
 def mat_dupvar(p, d, cov=True):
     """
@@ -97,21 +153,12 @@ def mat_dupvar(p, d, cov=True):
             C   = C + C.T + np.diag(np.diag(Y))
             return np.kron(C, W)
 
-        return {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (p*d,)*2,
-            'func': psi_to_dup_cov,
-            'nparam': p*(p+1)/2}
+        return ssmat(transform=False, dynamic=False, constant=False,
+            shape=(p*d,)*2, func=psi_to_dup_cov, nparam=p*(p+1)/2)
     else:
-        return {
-            'gaussian': True,
-            'dynamic':  False,
-            'constant': False,
-            'shape': (p*d,)*2,
-            'func': lambda x: np.asmatrix(np.diag(np.repeat(np.exp(2*np.asarray(x)),d))),
-            'nparam': p}
+        return ssmat(transform=False, dynamic=False, constant=False,
+            shape=(p*d,)*2, nparam=p,
+            func=lambda x: np.mat(np.diag(np.repeat(np.exp(2*np.asarray(x)),d))))
 
 def mat_interlvar(p, q, cov):
     """Create state space matrix for q-interleaved variance noise.
@@ -158,25 +205,21 @@ def mat_interlvar(p, q, cov):
 
         return V
 
-    return {
-        'gaussian': True,
-        'dynamic':  False,
-        'constant': False,
-        'shape': (p*q,)*2,
-        'func': psi_to_interlvar,
-        'nparam': nparam}
+    return ssmat(transform=False, dynamic=False, constant=False,
+        shape=(p*q,)*2, func=psi_to_interlvar, nparam=nparam)
 
 def func_stat_to_dyn(func,n):
     """helper function for mat_cat()"""
     # Nested functions inside a function can be defined multiple times, but any outside variables "bound" into the function will take the last value at the outer function exit, making multiple function definitions equivalent ...
     return lambda x: [func(x)]*n
 
-def mat_cat(M,mats):
+def mat_cat(mode,mats):
     """Concatenate state space matrices
-    M -- one of 'H','Z','T','R','Q','c','a1','P1'
-    mats -- list of state space matrices
+    mode : 'h' for horizontal concatenation, 'v' for vertical concatenation, and 'd' for diagonal concatenation
+    mats : list of state space matrices
     """
     N        = len(mats)
+    trans    = mats[0].transform
     dynamic  = any([mats[i]['dynamic'] for i in range(N)])
     n        = max([mats[i]['shape'][2] if mats[i]['dynamic'] else 1 for i in range(N)])
     constant_l  = [mats[i]['constant'] for i in range(N)]
@@ -185,13 +228,13 @@ def mat_cat(M,mats):
         nparam_l  = [mats[i]['nparam'] if not mats[i]['constant'] else 0 for i in range(N)]
         nparam    = sum(nparam_l)
         nparam_l  = np.cumsum([0] + nparam_l)
-    if M == 'Z':
+    if mode == 'h':
         mstack  = lambda x: np.asmatrix(np.hstack(x))
         shape   = mats[0]['shape'][0], sum([mats[i]['shape'][1] for i in range(N)])
-    elif M in ('c','a1'):
+    elif mode == 'v':
         mstack  = lambda x: np.asmatrix(np.vstack(x))
         shape   = sum([mats[i]['shape'][0] for i in range(N)]), mats[0]['shape'][1]
-    else:
+    else: # mode == 'd'
         mstack  = lambda x: np.asmatrix(blkdiag(*x))
         shape   = sum([mats[i]['shape'][0] for i in range(N)]), sum([mats[i]['shape'][1] for i in range(N)])
     if dynamic: shape += (n,)
@@ -228,19 +271,14 @@ def mat_cat(M,mats):
                     mats1[i]  = mats[i](x[nparam_l[i]:nparam_l[i+1]]) # mats stores the function permanently, while the corresponding entry in mats1 stores the current realization
                 return mstack([mats1[i] for i in range(N)])
 
-    if M in ('H','Q','a1','P1'): # "Distribution" matrices
-        M  = {'gaussian': True}
-    else: # M in ('Z','T','R','c'), the "transform" matrices
-        M  = {'linear':   True}
-    M['dynamic']    =  dynamic
-    M['constant']   = constant
-    M['shape']      =    shape
+    M  = {'transform': trans, 'dynamic': dynamic, 'constant': constant,
+        'shape': shape}
     if constant:
         M['mat']    = mats
     else:
         M['func']   = mcat_func
         M['nparam'] = nparam
-    return M
+    return ssmat(**M)
 
 #--------------------------------------------------#
 #-- Functions for State Space Model Construction --#
@@ -257,32 +295,7 @@ def validate_model(model):
     MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
     for M in MM:
         if M not in model: return False
-        if 'dynamic' not in model[M]: return False
-        if 'constant' not in model[M]: return False
-        if 'shape' not in model[M]: return False
-        if model[M]['constant']:
-            if 'mat' not in model[M]: return False
-            m  = model[M]['mat']
-        else:
-            if 'func' not in model[M]: return False
-            if model[M]['func'] is None:
-                if 'mat' not in model[M]: return False
-                m  = model[M]['mat']
-            elif not callable(model[M]['func']): return False
-            else:
-                if 'nparam' not in model[M]: return False
-                m  = model[M]['func']([0.0]*model[M]['nparam'])
-        if model[M]['dynamic']:
-            if len(model[M]['shape']) < 3: return False
-            if type(m) != list: return False
-            if model[M]['shape'][2] != len(m): return False
-            for i in range(len(m)):
-                if type(m[i]) != np.matrix: return False
-                if m[i].shape[0] != model[M]['shape'][0] or m[i].shape[1] != model[M]['shape'][1]: return False
-        else:
-            if len(model[M]['shape']) > 2 and model[M]['shape'][2] != 1: return False
-            if type(m) != np.matrix: return False
-            if m.shape[0] != model[M]['shape'][0] or m.shape[1] != model[M]['shape'][1]: return False
+        if not model[M]: return False
     return True
 
 def model_from_mats(H_or_model,Z=None,T=None,R=None,Q=None,c=None,a1=None,P1=None,A=None):
@@ -315,7 +328,10 @@ def model_cat(models):
     final_model = {}
     final_model['H'] = models[0]['H']
     for M in ('Z','T','R','Q','c','a1','P1'):
-        final_model[M] = mat_cat(M,[models[i][M] for i in range(N)])
+        if M == 'Z': mode = 'h'
+        elif M in ('c','a1'): mode = 'v'
+        else: mode = 'd'
+        final_model[M] = mat_cat(mode,[models[i][M] for i in range(N)])
     final_model = model_from_mats(final_model)
     final_model['mcom'] = [m for i in range(N) for m in models[i]['mcom']]
     return final_model
