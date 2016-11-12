@@ -575,7 +575,7 @@ def estimate(y,model,x0,method=None,options=None,tol=DEFAULT_TOL):
     #-- Prepare state space matrices and data --#
     n, p, y, mis, anymis, allmis  = prepare_data(y)
     nmis    = n - sum(allmis)
-    w       = model['nparam']
+    w       = model.nparam
 
     #-- Estimate model parameters --#
     _nloglik = lambda x: _kalman(4,n,y,mis,anymis,allmis,*prepare_model(set_param(model,x),n),tol=tol,log_diag=False)[0]
@@ -585,8 +585,8 @@ def estimate(y,model,x0,method=None,options=None,tol=DEFAULT_TOL):
     model   = set_param(model,result.x)
 
     result.logL  = -(nmis*p*np.log(2*np.pi) + result.fun) / 2
-    result.AIC   = (-2*result.logL + 2*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
-    result.BIC   = (-2*result.logL + np.log(nmis)*(w + np.sum(model['P1']['mat'] == np.inf)))/nmis
+    result.AIC   = (-2*result.logL + 2*(w + np.sum(model.P1.mat == np.inf)))/nmis
+    result.BIC   = (-2*result.logL + np.log(nmis)*(w + np.sum(model.P1.mat == np.inf)))/nmis
     if not result.success: sys.stderr.write('ssm.estimate:warning:minimizer failed to exit successfully\n')
 
     return model,result
@@ -618,7 +618,7 @@ def statesmo(y,model,mode=1,tol=DEFAULT_TOL):
     if Output_N: Result_N  = [None]*n
 
     #-- State smoothing backwards recursion --#
-    m   = model['a1']['shape'][0]
+    m   = model.m
     r   = np.matrix(np.zeros((m,1)))
     r1  = np.matrix(np.zeros((m,1)))
     N   = np.matrix(np.zeros((m,m)))
@@ -754,7 +754,7 @@ def disturbsmo(y,model,mode=1,tol=DEFAULT_TOL):
         d,Fns,v,invF,K,L,RQ,QRt = _kalman(3,n,y,mis,anymis,allmis,H,Z,T,R,Q,c,a1,P1,stationary,RQdyn,tol)
 
         #-- Disturbance smoothing backwards recursion --#
-        m   = model['a1']['shape'][0]
+        m   = model.m
         rr  = Q[0].shape[0]
         r   = np.matrix(np.zeros((m,1)))
         N   = np.matrix(np.zeros((m,m)))
@@ -816,13 +816,13 @@ def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
 
     #-- Get the current matrix values --#
     n, p, y, mis, anymis, allmis  = prepare_data(y)
-    m  = model['T']['shape'][0]
-    r  = model['R']['shape'][1]
+    m  = model.m
+    r  = model.r
     H, Z, T, R, Q, c, a1, P1, stationary, RQdyn  = prepare_model(model,n)
-    Hdyn = model['H']['dynamic']
-    Zdyn = model['Z']['dynamic']
-    Qdyn = model['Q']['dynamic']
-    cdyn = model['c']['dynamic']
+    Hdyn = model.H.dynamic
+    Zdyn = model.Z.dynamic
+    Qdyn = model.Q.dynamic
+    cdyn = model.c.dynamic
 
     #-- Data preprocessing --#
     Nsamp = np.ceil(N/2.0) if antithetic >= 1 else N
@@ -865,10 +865,10 @@ def signal(alpha, model, t0=0):
     #     ycom    = signal_int_c(alpha, model.mcom, getmat_c(model.Z), ~issta(model.Z), t0, true);
     # else
     n       = alpha.shape[1]
-    ncom    = len(model['mcom'])
-    mcom    = np.cumsum([0] + model['mcom'])
-    Zmat    = model['Z']['mat']
-    if model['Z']['dynamic']:
+    ncom    = len(model.mcom)
+    mcom    = np.cumsum([0] + model.mcom)
+    Zmat    = model.Z.mat
+    if model.Z.dynamic:
         p       = Zmat[0].shape[0]
         ycom    = np.zeros((p, n, ncom))
         for t in range(n):
