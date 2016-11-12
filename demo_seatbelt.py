@@ -17,8 +17,16 @@ if SILENT_OUTPUT:
     mpl.rcParams['savefig.dpi']         = 150
     mpl.rcParams['savefig.format']      = 'png'
     mpl.rcParams['savefig.pad_inches']  = 0.1
+    fig_count  = 0
+    def _output_fig(count):
+        count  += 1
+        plt.savefig('demo_seatbelt'+run_name+("_out%02d" % count)+'.png')
+        plt.close()
+        return count
+    output_fig  = lambda : _output_fig(fig_count)
 else:
-    fout  = sys.stdout
+    fout        = sys.stdout
+    output_fig  = plt.show
 
 fout.write('\n')
 
@@ -60,11 +68,7 @@ ax3 = plt.subplot(313)
 plt.plot(time[:-1], irr)
 plt.title('Irregular'); plt.ylim([-0.15, 0.15])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out01.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 fig = plt.figure(num='Data and level')
 plt.plot(time, lvl, label='filtered level')
@@ -72,11 +76,7 @@ plt.plot(time[:-1], lvlhat, ':', label='smoothed level')
 plt.scatter(time[:-1], y.tolist()[0],c='r',marker='+', label='drivers')
 plt.ylim([6.95,7.9]); plt.legend()
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out02.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Calculate standardized residuals --#
 u       = irr/np.sqrt(epsvarhat)
@@ -96,11 +96,7 @@ ax3 = plt.subplot(313)
 plt.plot(time[:-1], lvlres)
 plt.title('Auxiliary level residuals'); plt.xlim([time[0],time[-2]]); plt.ylim([-2.5,1.5])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out03.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Adding explanatory variables and intervention to the model --#
 petrol   = seatbelt[[4],:]
@@ -137,11 +133,7 @@ plt.subplot(313)
 plt.plot(time[:-1], irrir)
 plt.title('Irregular'); plt.ylim([-0.15,0.15])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out04.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 irr,etahat,epsvarhat,etavarhat = ssm.disturbsmo(y,bstsmir)
 r       = np.zeros((12,y.shape[1]))
@@ -157,11 +149,7 @@ ax2 = plt.subplot(212)
 plt.plot(time[:-1], lvlres)
 plt.title('Normalized level residuals'); plt.xlim([time[0],time[-1]]); plt.ylim([-1.5,1])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out05.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Analysis of both front and rear seat passengers bivariate series --#
 y2  = seatbelt[1:3,:]
@@ -205,11 +193,7 @@ ax4  = plt.subplot(224)
 plt.plot(time[:169], lvlhat[1,:])
 plt.title('Rear seat passenger level'); plt.xlim([time[0],time[168]]); # plt.ylim([1.64,1.96])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out06.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Add intervention to both series --#
 bibstsm2i  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[True]])])
@@ -273,10 +257,6 @@ plt.plot(time[:-1], lvlhati[1,:])
 plt.title('Rear seat passenger level')
 plt.xlim([time[0],time[-2]]); # plt.ylim([1.64,1.96])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_seatbelt'+run_name+'_out07.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 if SILENT_OUTPUT: fout.close()

@@ -15,8 +15,16 @@ if SILENT_OUTPUT:
     mpl.rcParams['savefig.dpi']         = 150
     mpl.rcParams['savefig.format']      = 'png'
     mpl.rcParams['savefig.pad_inches']  = 0.1
+    fig_count  = 0
+    def _output_fig(count):
+        count  += 1
+        plt.savefig('demo_nile'+run_name+("_out%02d" % count)+'.png')
+        plt.close()
+        return count
+    output_fig  = lambda : _output_fig(fig_count)
 else:
-    fout  = sys.stdout
+    fout        = sys.stdout
+    output_fig  = plt.show
 
 fout.write('\n')
 
@@ -62,11 +70,7 @@ ax4 = plt.subplot(224)
 plt.plot(time,F)
 plt.title('Prediction error variance'); plt.ylim([20000,32500])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_nile'+run_name+'_out01.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- State smoothing --#
 alphahat,V,r,N    = ssm.statesmo(y,llm)
@@ -94,11 +98,7 @@ ax4 = plt.subplot(224)
 plt.plot(time,N)
 plt.title('Smoothing variance cumulant'); plt.ylim([0,0.000105])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_nile'+run_name+'_out02.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Disturbance smoothing --#
 epshat,etahat,epsvarhat,etavarhat = ssm.disturbsmo(y,llm)
@@ -122,11 +122,7 @@ ax4 = plt.subplot(224)
 plt.plot(time,etavarhat)
 plt.title('State error variance'); plt.ylim([1225,1475])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_nile'+run_name+'_out03.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Simulation smoothing --#
 NN = 5 if SILENT_OUTPUT else 1
@@ -156,7 +152,8 @@ for ii in range(NN):
     plt.title('Conditioned sampled state error'); plt.ylim([-440,280]); plt.legend()
 
     if SILENT_OUTPUT:
-        plt.savefig('demo_nile'+run_name+'_out04-'+str(ii)+'.png')
+        if ii==0: fig_count  += 1
+        plt.savefig('demo_nile'+run_name+("_out%02d-"%fig_count)+str(ii)+'.png')
         plt.close()
     else:
         plt.show()
@@ -187,11 +184,7 @@ ax4 = plt.subplot(224)
 plt.plot(time, Vmis)
 plt.title('Filtered state (extrapolation)'); plt.ylim([2000,10000])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_nile'+run_name+'_out05.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 #-- Forecasting (equivalent to future missing values) --#
 yforc   = np.hstack([y,np.tile(np.nan,(1,50))])
@@ -221,11 +214,7 @@ ax4 = plt.subplot(224)
 plt.plot(time+range(1972,2022), Fforc)
 plt.title('Observation forecast variance'); plt.xlim([1868,2026]); plt.ylim([20000,96000])
 
-if SILENT_OUTPUT:
-    plt.savefig('demo_nile'+run_name+'_out06.png')
-    plt.close()
-else:
-    plt.show()
+fig_count  = output_fig()
 
 fout.write('\n')
 

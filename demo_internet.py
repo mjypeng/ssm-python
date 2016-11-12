@@ -2,10 +2,29 @@
 
 import sys
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import ssm
 
-fout  = sys.stdout
+mpl.rcParams['figure.figsize'] = (16,10)
+SILENT_OUTPUT = bool(sys.argv[1] if len(sys.argv)>1 else 0)
+if SILENT_OUTPUT:
+    run_name = '_'+sys.argv[2] if len(sys.argv)>2 else ''
+    fout  = open('demo_internet'+run_name+'_out.txt','w')
+    mpl.rcParams['savefig.bbox']        = 'tight'
+    mpl.rcParams['savefig.dpi']         = 150
+    mpl.rcParams['savefig.format']      = 'png'
+    mpl.rcParams['savefig.pad_inches']  = 0.1
+    fig_count  = 0
+    def _output_fig(count):
+        count  += 1
+        plt.savefig('demo_internet'+run_name+("_out%02d" % count)+'.png')
+        plt.close()
+        return count
+    output_fig  = lambda : _output_fig(fig_count)
+else:
+    fout        = sys.stdout
+    output_fig  = plt.show
 
 fout.write('\n')
 
@@ -73,7 +92,7 @@ plt.plot(yf.squeeze(), label='forecast')
 plt.scatter(range(1,y.shape[1]+1), y.squeeze(), 10, 'r', 's', 'filled', label='data')
 plt.title('Internet series forecast'); plt.ylim([-15,15]); plt.legend()
 
-plt.show()
+fig_count  = output_fig()
 
 #-- Forecast with ARMA(1, 1) on the data w/ missing values --#
 armafore,res  = ssm.estimate(ymis, ssm.model_arma(1,1),[0.1,0.1,np.log(0.1)/2],method='Nelder-Mead',options={'maxiter':4000,'maxfev':3000})
@@ -84,4 +103,4 @@ plt.scatter(range(1,ymis.shape[1]+1), ymis.squeeze(), 10, 'r', 's', 'filled', la
 plt.title('Internet series in-sample one-step and out-of-sample forecasts')
 plt.ylim([-15,15])
 
-plt.show()
+fig_count  = output_fig()
