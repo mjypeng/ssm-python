@@ -151,22 +151,6 @@ def model_stsm(lvl, seasonal_type, s, cycle=False, x=None):
 
     return model_cat(models)
 
-    # return {
-    #     H=model1.H,
-    #     Z=mat_const(np.hstack([model1.Z.mat,model2.Z.mat])),
-    #     T=mat_const(blkdiag(model1.T.mat,model2.T.mat)),
-    #     R=mat_const(blkdiag(model1.R.mat,model2.R.mat)),
-    #     Q={
-    #         'gaussian': True,
-    #         'dynamic':  False,
-    #         'constant': False,
-    #         'shape': np.asarray(model1.Q.shape) + np.asarray(model2.Q.shape),
-    #         'func': lambda x: np.asmatrix(blkdiag(model1.Q.func(x[:model1.Q.nparam]),model2.Q.func(x[model1.Q.nparam:]))),
-    #         'nparam': model1.Q.nparam + model2.Q.nparam},
-    #     c=mat_const(np.vstack([model1.c.mat,model2.c.mat])),
-    #     a1: mat_const(np.vstack([model1.a1.mat,model2.a1.mat])),
-    #     P1: mat_const(blkdiag(model1.P1.mat,model2.P1.mat))}
-
 def model_mvllm(p, cov=(True,True)):
     # %SSM_MVLLM Create SSMODEL object for multivariate local level model.
     # %   model = SSM_MVLLM(p[, cov])
