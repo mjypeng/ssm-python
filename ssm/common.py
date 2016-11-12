@@ -49,42 +49,42 @@ class ssmat(dict):
     def __repr__(self):
         props  = ('transform','linear' if self.transform else 'gaussian','dynamic','constant','shape') + (('mat',) if self.constant else ('func','nparam') + (('mat',) if 'mat' in self else ()))
         m  = max(map(len, list(props))) + 1
-        return '\n'.join([x.rjust(m) + ': ' + repr(self[x]) for x in props])
+        return '\n'.join([x.rjust(m) + ': ' + repr(self[x]).replace('\n','\n'+' '*(m+2)) for x in props])
 
     def __dir__(self):
         return list(self.keys())
 
     def __nonzero__(self):
         if 'transform' not in self: return False
-        if self['transform']:
+        if self.transform:
             if 'linear' not in self: return False
         elif 'gaussian' not in self: return False
         if 'dynamic' not in self: return False
         if 'constant' not in self: return False
         if 'shape' not in self: return False
-        if self['constant']:
+        if self.constant:
             if 'mat' not in self: return False
-            m  = self['mat']
+            m  = self.mat
         else:
             if 'func' not in self: return False
-            if self['func'] is None:
+            if self.func is None:
                 if 'mat' not in self: return False
-                m  = self['mat']
-            elif not callable(self['func']): return False
+                m  = self.mat
+            elif not callable(self.func): return False
             else:
                 if 'nparam' not in self: return False
-                m  = self['func']([0.0]*self['nparam'])
-        if self['dynamic']:
-            if len(self['shape']) < 3: return False
+                m  = self.func([0.0]*self.nparam)
+        if self.dynamic:
+            if len(self.shape) < 3: return False
             if type(m) != list: return False
-            if self['shape'][2] != len(m): return False
+            if self.shape[2] != len(m): return False
             for i in range(len(m)):
                 if type(m[i]) != np.matrix: return False
-                if m[i].shape[0] != self['shape'][0] or m[i].shape[1] != self['shape'][1]: return False
+                if m[i].shape[0] != self.shape[0] or m[i].shape[1] != self.shape[1]: return False
         else:
-            if len(self['shape']) > 2 and self['shape'][2] != 1: return False
+            if len(self.shape) > 2 and self.shape[2] != 1: return False
             if type(m) != np.matrix: return False
-            if m.shape[0] != self['shape'][0] or m.shape[1] != self['shape'][1]: return False
+            if m.shape[0] != self.shape[0] or m.shape[1] != self.shape[1]: return False
         return True
 
 #---------------------------------------------------#
@@ -221,37 +221,37 @@ def mat_cat(mode,mats):
     """
     N        = len(mats)
     trans    = mats[0].transform
-    dynamic  = any([mats[i]['dynamic'] for i in range(N)])
-    n        = max([mats[i]['shape'][2] if mats[i]['dynamic'] else 1 for i in range(N)])
-    constant_l  = [mats[i]['constant'] for i in range(N)]
+    dynamic  = any([mats[i].dynamic for i in range(N)])
+    n        = max([mats[i].shape[2] if mats[i].dynamic else 1 for i in range(N)])
+    constant_l  = [mats[i].constant for i in range(N)]
     constant    = all(constant_l)
     if not constant:
-        nparam_l  = [mats[i]['nparam'] if not mats[i]['constant'] else 0 for i in range(N)]
+        nparam_l  = [mats[i].nparam if not mats[i].constant else 0 for i in range(N)]
         nparam    = sum(nparam_l)
         nparam_l  = np.cumsum([0] + nparam_l)
     if mode == 'h':
         mstack  = lambda x: np.asmatrix(np.hstack(x))
-        shape   = mats[0]['shape'][0], sum([mats[i]['shape'][1] for i in range(N)])
+        shape   = mats[0].shape[0], sum([mats[i].shape[1] for i in range(N)])
     elif mode == 'v':
         mstack  = lambda x: np.asmatrix(np.vstack(x))
-        shape   = sum([mats[i]['shape'][0] for i in range(N)]), mats[0]['shape'][1]
+        shape   = sum([mats[i].shape[0] for i in range(N)]), mats[0].shape[1]
     else: # mode == 'd'
         mstack  = lambda x: np.asmatrix(blkdiag(*x))
-        shape   = sum([mats[i]['shape'][0] for i in range(N)]), sum([mats[i]['shape'][1] for i in range(N)])
+        shape   = sum([mats[i].shape[0] for i in range(N)]), sum([mats[i].shape[1] for i in range(N)])
     if dynamic: shape += (n,)
 
     # Make all models dynamic if one is dynamic, and collapse entries into either matrix or function
     for i in range(N):
-        if mats[i]['constant']:
-            if dynamic and not mats[i]['dynamic']:
-                mats[i]  = [mats[i]['mat']]*n
+        if mats[i].constant:
+            if dynamic and not mats[i].dynamic:
+                mats[i]  = [mats[i].mat]*n
             else:
-                mats[i]  = mats[i]['mat']
-        else: # not mats[i]['constant']
-            if dynamic and not mats[i]['dynamic']:
-                mats[i]  = func_stat_to_dyn(mats[i]['func'],n) # a helper function must be used here to prevent i being "bound" to the last value in the current function scope, which would result in a list of identical functions
+                mats[i]  = mats[i].mat
+        else: # not mats[i].constant
+            if dynamic and not mats[i].dynamic:
+                mats[i]  = func_stat_to_dyn(mats[i].func,n) # a helper function must be used here to prevent i being "bound" to the last value in the current function scope, which would result in a list of identical functions
             else:
-                mats[i]  = mats[i]['func']
+                mats[i]  = mats[i].func
 
     if constant:
         if dynamic: mats  = [mstack([mats[i][t] for i in range(N)]) for t in range(n)]
@@ -309,11 +309,11 @@ class ssmodel(dict):
         if 'A' in kwargs:  self['A'] = kwargs['A']
         if not self: raise TypeError('invalid combination of model matrices for model construction')
         self['dynamic']  = np.any([self[M]['dynamic'] for M in ('H','Z','T','R','Q','c','a1','P1')])
-        self['n']  = min([self[M]['shape'][2] for M in ('H','Z','T','R','Q','c','a1','P1') if self[M]['dynamic']]) if self['dynamic'] else np.inf
-        self['p']  = self['Z']['shape'][0]
-        self['m']  = self['T']['shape'][0]
-        self['r']  = self['R']['shape'][1]
-        self['nparam'] = sum([self[M]['nparam'] for M in ('H','Z','T','R','Q','c','a1','P1') if not self[M]['constant']]) + (self['A']['nparam'] if 'A' in self else 0)
+        self['n']  = min([self[M].shape[2] for M in ('H','Z','T','R','Q','c','a1','P1') if self[M].dynamic]) if self['dynamic'] else np.inf
+        self['p']  = self['Z'].shape[0]
+        self['m']  = self['T'].shape[0]
+        self['r']  = self['R'].shape[1]
+        self['nparam'] = sum([self[M].nparam for M in ('H','Z','T','R','Q','c','a1','P1') if not self[M].constant]) + (self['A']['nparam'] if 'A' in self else 0)
         self['mcom']   = [self['m']] # models built from ssmat constructor are considered a single "component"
 
     def __getattr__(self, name):
@@ -326,21 +326,21 @@ class ssmodel(dict):
     __delattr__ = dict.__delitem__
 
     def __repr__(self):
-        props  = (('A',) if 'A' in self else ()) + ('H','Z','T','R','Q','c','a1','P1')
+        props  = ('dynamic','n','p','m','r','nparam','mcom') + (('A',) if 'A' in self else ()) + ('H','Z','T','R','Q','c','a1','P1')
         m  = max(map(len, list(props))) + 1
-        return '\n'.join([x.rjust(m) + ': ' + repr(self[x]) for x in props])
+        return '\n'.join([x.rjust(m) + ((':\n' + ' '*(m+2)) if type(self[x])==ssmat else ': ') + repr(self[x]).replace('\n','\n'+' '*(m+2)) for x in props])
 
     def __dir__(self):
         return list(self.keys())
 
     def __nonzero__(self):
         if 'A' in self:
-            if 'target' not in self['A']: return False
-            if 'func' not in self['A']: return False
-            if 'nparam' not in self['A']: return False
-            m  = self['A']['func']([0.0]*self['A']['nparam'])
+            if 'target' not in self.A: return False
+            if 'func' not in self.A: return False
+            if 'nparam' not in self.A: return False
+            m  = self.A['func']([0.0]*self.A['nparam'])
             for j in range(len(m)):
-                self[self['A']['target'][j]]['mat']  = m[j]
+                self[self.A['target'][j]].mat  = m[j]
 
         MM  = ('H', 'Z', 'T', 'R', 'Q', 'c', 'a1', 'P1')
         for M in MM:
@@ -359,15 +359,17 @@ def model_cat(models):
     Concatenation of models with 'A' is not supported yet
     """
     N  = len(models)
-    final_model = {}
-    final_model['H'] = models[0]['H']
-    for M in ('Z','T','R','Q','c','a1','P1'):
-        if M == 'Z': mode = 'h'
-        elif M in ('c','a1'): mode = 'v'
-        else: mode = 'd'
-        final_model[M] = mat_cat(mode,[models[i][M] for i in range(N)])
+    final_model       = {}
+    final_model['H']  = models[0].H
+    final_model['Z']  = mat_cat('h',[models[i].Z for i in range(N)])
+    final_model['T']  = mat_cat('d',[models[i].T for i in range(N)])
+    final_model['R']  = mat_cat('d',[models[i].R for i in range(N)])
+    final_model['Q']  = mat_cat('d',[models[i].Q for i in range(N)])
+    final_model['c']  = mat_cat('v',[models[i].c for i in range(N)])
+    final_model['a1'] = mat_cat('v',[models[i].a1 for i in range(N)])
+    final_model['P1'] = mat_cat('d',[models[i].P1 for i in range(N)])
     final_model = ssmodel(**final_model)
-    final_model['mcom'] = [m for i in range(N) for m in models[i]['mcom']]
+    final_model.mcom = [m for i in range(N) for m in models[i].mcom]
     return final_model
 
 #--------------------------------#
@@ -383,34 +385,34 @@ def prepare_data(y):
     return n, p, y, mis, anymis, allmis
 
 def prepare_mat(M,n):
-    return M['mat'] if M['dynamic'] else [M['mat']]*n
+    return M.mat if M.dynamic else [M.mat]*n
 
 def prepare_model(model,n):
-    H   = prepare_mat(model['H'],n)
-    Z   = prepare_mat(model['Z'],n)
-    T   = prepare_mat(model['T'],n)
-    R   = prepare_mat(model['R'],n)
-    Q   = prepare_mat(model['Q'],n)
-    c   = prepare_mat(model['c'],n)
-    a1  = model['a1']['mat']
-    P1  = model['P1']['mat']
-    RQdyn       = model['R']['dynamic'] or model['Q']['dynamic']
-    stationary  = not (model['H']['dynamic'] or model['Z']['dynamic'] or model['T']['dynamic'] or RQdyn) # c does not effect convergence of P
+    H   = prepare_mat(model.H,n)
+    Z   = prepare_mat(model.Z,n)
+    T   = prepare_mat(model.T,n)
+    R   = prepare_mat(model.R,n)
+    Q   = prepare_mat(model.Q,n)
+    c   = prepare_mat(model.c,n)
+    a1  = model.a1.mat
+    P1  = model.P1.mat
+    RQdyn       = model.R.dynamic or model.Q.dynamic
+    stationary  = not (model.H.dynamic or model.Z.dynamic or model.T.dynamic or RQdyn) # c does not effect convergence of P
     return H, Z, T, R, Q, c, a1, P1, stationary, RQdyn
 
 def set_param(model,x):
     # The model is modified inplace, but reference returned for convenience
     i  = 0
     if 'A' in model:
-        target  = model['A']['target']
-        nparam  = model['A']['nparam']
-        m       = model['A']['func'](x[:nparam])
+        target  = model.A['target']
+        nparam  = model.A['nparam']
+        m       = model.A['func'](x[:nparam])
         for j in range(len(m)):
-            model[target[j]]['mat']  = m[j]
+            model[target[j]].mat  = m[j]
         i       = nparam
     for M in ('H','Z','T','R','Q','c'):
-        if not model[M]['constant'] and model[M]['func'] is not None:
-            nparam  = model[M]['nparam']
-            model[M]['mat'] = model[M]['func'](x[i:i+nparam])
+        if not model[M].constant and model[M].func is not None:
+            nparam  = model[M].nparam
+            model[M].mat = model[M].func(x[i:i+nparam])
             i  += nparam
     return model
