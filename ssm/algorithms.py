@@ -853,7 +853,7 @@ def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
 
     return alphatilde,epstilde,etatilde,alphaplus
 
-def signal(alpha, model, t0=0):
+def signal(alpha, model, t0=0, mcom=None):
     # %@SSMODEL/SIGNAL Retrieve signal components.
     # %       alpha is the state sequence.
     # %       model is the linear Gaussian model to use.
@@ -865,8 +865,12 @@ def signal(alpha, model, t0=0):
     #     ycom    = signal_int_c(alpha, model.mcom, getmat_c(model.Z), ~issta(model.Z), t0, true);
     # else
     n       = alpha.shape[1]
-    ncom    = len(model.mcom)
-    mcom    = np.cumsum([0] + model.mcom)
+    if mcom == 'all':
+        mcom  = [model.m]
+    elif mcom is None:
+        mcom  = model.mcom
+    ncom    = len(mcom)
+    mcom    = np.cumsum([0] + mcom)
     Zmat    = model.Z.mat
     if model.Z.dynamic:
         p       = Zmat[0].shape[0]
@@ -882,3 +886,29 @@ def signal(alpha, model, t0=0):
             ycom[:,:,i] = Zmat[:,mcom[i]:mcom[i+1]]*alpha[mcom[i]:mcom[i+1],:]
 
     return ycom.transpose((2,1,0)).squeeze() if p == 1 else ycom
+
+def signalvar(V, model, t0=0, mcom=None):
+    """Retrieve signal component variances.
+    V is the state variance sequence.
+    model is the linear Gaussian model to use.
+    t0 is optional time offset for dynamic Z.
+    ycomvar is p*p*n*M where M is number of signal components, unless p == 1, in which case ycomvar is M*n.
+    """
+    n       = V.shape[2]
+    p       = model.p
+    if mcom == 'all':
+        mcom  = [model.m]
+    elif mcom is None:
+        mcom  = model.mcom
+    ncom    = len(mcom)
+    mcom    = np.cumsum([0] + mcom)
+    ycom    = np.zeros((p, p, n, ncom))
+    for t in range(n):
+        if model.Z.dynamic:
+            Z   = model.Z.mat[t0 + t]
+        else:
+            Z   = model.Z.mat
+        for i in range(ncom):
+            ycom[:,:,[t],i] = Z[:,mcom[i]:mcom[i+1]]*V[mcom[i]:mcom[i+1],mcom[i]:mcom[i+1],t]*Z[:,mcom[i]:mcom[i+1]].T
+
+    return ycom.transpose((3,2,0,1)).squeeze() if p == 1 else ycom
