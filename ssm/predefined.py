@@ -97,15 +97,18 @@ def model_seasonal(seasonal_type,s):
                    P1=mat_const(np.diag([np.inf]*m)))
 
 def model_cycle():
+    """Model for business cycles"""
     def mat_cycle(x):
         # Period is 2*pi/Lambda
+        # Damping factor Rho is in (0,1)
         Lambda  = x[0]
-        sinL    = np.sin(Lambda)
-        cosL    = np.cos(Lambda)
+        Rho     = 1 / (1 + np.exp(-x[1]))
+        sinL    = Rho * np.sin(Lambda)
+        cosL    = Rho * np.cos(Lambda)
         return np.mat([[cosL,sinL],[-sinL,cosL]])
     #
     T  = ssmat(transform=True, dynamic=False, constant=False,
-               shape=(2,2), func=mat_cycle, nparam=1)
+               shape=(2,2), func=mat_cycle, nparam=2)
     return ssmodel(H=mat_var(1), Z=mat_const([1,0]), T=T,
                    R=mat_const(np.eye(2)), Q=mat_dupvar(1,2,True),
                    c=mat_const(np.zeros((2,1))),
