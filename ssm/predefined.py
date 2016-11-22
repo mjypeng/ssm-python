@@ -98,6 +98,7 @@ def model_seasonal(seasonal_type,s):
 
 def model_cycle():
     def mat_cycle(x):
+        # Period is 2*pi/Lambda
         Lambda  = x[0]
         sinL    = np.sin(Lambda)
         cosL    = np.cos(Lambda)
