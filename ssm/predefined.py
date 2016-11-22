@@ -96,6 +96,21 @@ def model_seasonal(seasonal_type,s):
                    a1=mat_const(np.zeros((m,1))),
                    P1=mat_const(np.diag([np.inf]*m)))
 
+def model_cycle():
+    def mat_cycle(x):
+        Lambda  = x[0]
+        sinL    = np.sin(Lambda)
+        cosL    = np.cos(Lambda)
+        return np.mat([[cosL,sinL],[-sinL,cosL]])
+    #
+    T  = ssmat(transform=True, dynamic=False, constant=False,
+               shape=(2,2), func=mat_cycle, nparam=1)
+    return ssmodel(H=mat_var(1), Z=mat_const([1,0]), T=T,
+                   R=mat_const(np.eye(2)), Q=mat_dupvar(1,2,True),
+                   c=mat_const(np.zeros((2,1))),
+                   a1=mat_const(np.zeros((2,1))),
+                   P1=mat_const([[np.inf,0],[0,np.inf]]))
+
 def model_intv(n, intv_type, tau, dynamic=False):
     x  = x_intv(n, intv_type, tau)
     m  = x.shape[0]
@@ -146,7 +161,7 @@ def model_stsm(lvl, seasonal_type, s, cycle=False, x=None):
 
     models = [model1,model2]
 
-    # if cycle, model = [model ssm_cycle]; end
+    if cycle: models.append(model_cycle())
     if x is not None: models.append(model_reg(x))
 
     return model_cat(models)
