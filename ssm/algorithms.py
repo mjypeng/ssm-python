@@ -635,15 +635,15 @@ def statesmo(y,model,mode=1,tol=DEFAULT_TOL):
             r   = T[t].T * r
             N   = T[t].T * N * T[t]
             if t > d:
-                alphahat[:,t]  = P[:,:,t] * r
-                V[:,:,t]       = P[:,:,t] * N * P[:,:,t]
+                alphahat[:,[t]] = P[:,:,t] * r
+                V[:,:,t]        = P[:,:,t] * N * P[:,:,t]
             else:
                 r1  = T[t].T * r1
                 N1  = T[t].T * N1 * T[t]
                 N2  = T[t].T * N2 * T[t]
-                alphahat[:,t]  = P[:,:,t] * r + P_inf[t] * r1
-                P_infN1P       = P_inf[t] * N1 * P[:,:,t]
-                V[:,:,t]       = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
+                alphahat[:,[t]] = P[:,:,t] * r + P_inf[t] * r1
+                P_infN1P        = P_inf[t] * N1 * P[:,:,t]
+                V[:,:,t]        = P[:,:,t] * N * P[:,:,t] + P_infN1P.T + P_infN1P + P_inf[t] * N2 * P_inf[t]
         else:
             if anymis[t]: Z[t] = Z[t][~mis[:,t],:]
             if t > d:
