@@ -65,7 +65,7 @@ def model_seasonal(seasonal_type,s):
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         #-- Trigonometric seasonal component --#
         m  = s-1
-        Z  = mat_const(np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))]))
+        Z  = mat_const(np.bmat([np.tile([1.0,0.0],(1,(s-1)/2)),np.ones((1,1 - s%2))]))
         T  = []
         if s%2 == 0:
             for i in range(1,s/2):
