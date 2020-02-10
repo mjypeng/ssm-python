@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from common import *
+from .common import *
 from scipy.optimize import minimize, show_options
 
 DEFAULT_TOL = 10**-7
@@ -825,7 +825,7 @@ def simsmo(N,y,model,antithetic=1,tol=DEFAULT_TOL):
     cdyn = model.c.dynamic
 
     #-- Data preprocessing --#
-    Nsamp = np.ceil(N/2.0) if antithetic >= 1 else N
+    Nsamp = int(np.ceil(N/2.0)) if antithetic >= 1 else N
 
     #-- Unconditional sampling --#
     yplus,alphaplus,epsplus,etaplus = _sample(Nsamp,n,p,m,r,H,Z,T,R,Q,c,a1,P1,stationary,Hdyn,Zdyn,RQdyn,Qdyn,cdyn)

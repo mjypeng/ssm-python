@@ -131,7 +131,7 @@ def mat_var(p=1,cov=True):
             nparam=p)
     else:
         return ssmat(transform=False, dynamic=False, constant=False,
-            shape=(p,p), func=f_psi_to_cov(p), nparam=p*(p+1)/2)
+            shape=(p,p), func=f_psi_to_cov(p), nparam=p*(p+1)//2)
 
 def mat_dupvar(p, d, cov=True):
     """
@@ -155,7 +155,7 @@ def mat_dupvar(p, d, cov=True):
             return np.kron(C, W)
 
         return ssmat(transform=False, dynamic=False, constant=False,
-            shape=(p*d,)*2, func=psi_to_dup_cov, nparam=p*(p+1)/2)
+            shape=(p*d,)*2, func=psi_to_dup_cov, nparam=p*(p+1)//2)
     else:
         return ssmat(transform=False, dynamic=False, constant=False,
             shape=(p*d,)*2, nparam=p,
@@ -180,7 +180,7 @@ def mat_interlvar(p, q, cov):
         emask       = np.zeros((q,q),dtype=bool)
         emask[j,j]  = True
         Vmask[j]    = np.kron(np.ones((p,p),dtype=bool) if cov[j] else np.eye(p,dtype=bool), emask)
-        nparam     += p*(p+1)/2 if cov[j] else p
+        nparam     += p*(p+1)//2 if cov[j] else p
 
     def psi_to_interlvar(x):
         # bound variables: p, q, cov, mask, Vmask

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from common import *
+from .common import *
 
 def x_intv(n, intv_type, tau):
     # %X_INTV Create regression variables for intervention components.
@@ -65,15 +65,15 @@ def model_seasonal(seasonal_type,s):
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         #-- Trigonometric seasonal component --#
         m  = s-1
-        Z  = mat_const(np.bmat([np.tile([1.0,0.0],(1,(s-1)/2)),np.ones((1,1 - s%2))]))
+        Z  = mat_const(np.bmat([np.tile([1.0,0.0],(1,(s-1)//2)),np.ones((1,1 - s%2))]))
         T  = []
         if s%2 == 0:
-            for i in range(1,s/2):
+            for i in range(1,s//2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
             T  = mat_const(blkdiag(*(T+[-1])))
         else: # s%2 == 1
-            for i in range(1,(s+1)/2):
+            for i in range(1,(s+1)//2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
             T  = mat_const(blkdiag(*T))
@@ -230,15 +230,15 @@ def model_mvseasonal(p, cov, seasonal_type, s):
                     nparam=p)
     elif seasonal_type in ('trig1','trig2','trig fixed'):
         m   = p*(s-1)
-        Z   = mat_const(np.kron(np.eye(p),np.bmat([np.tile([1.0,0.0],(1,np.floor((s-1)/2.))),np.ones((1,1 - s%2))])))
+        Z   = mat_const(np.kron(np.eye(p),np.bmat([np.tile([1.0,0.0],(1,(s-1)//2)),np.ones((1,1 - s%2))])))
         T  = []
         if s%2 == 0:
-            for i in range(1,s/2):
+            for i in range(1,s//2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
             T.append(-1)
         else: # s%2 == 1
-            for i in range(1,(s+1)/2):
+            for i in range(1,(s+1)//2):
                 Lambda  = 2*np.pi*i/s
                 T.append([[np.cos(Lambda),np.sin(Lambda)],[-np.sin(Lambda),np.cos(Lambda)]])
         T  = mat_const(np.kron(np.eye(p),blkdiag(*T)))

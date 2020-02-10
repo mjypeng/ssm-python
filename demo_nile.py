@@ -30,7 +30,7 @@ fout.write('\n')
 
 #-- Load data --#
 y       = np.loadtxt('data/nile.dat')[:,None].T
-time    = range(1871,1971)
+time    = list(range(1871,1971))
 
 #-- Maximum loglikelihood estimation --#
 llm       = ssm.model_llm()
@@ -160,7 +160,7 @@ for ii in range(NN):
 
 #-- Missing Observations --#
 ymis    = y.astype(float).copy()
-ymis[:,range(21,41)+range(61,81)] = np.nan
+ymis[:,list(range(21,41))+list(range(61,81))] = np.nan
 amis,Pmis        = ssm.kalman(ymis,llm)[:2]
 alphahatmis,Vmis = ssm.statesmo(ymis,llm)[:2]
 amis        = amis.squeeze()
@@ -198,20 +198,21 @@ Fforc     = Fforc.squeeze()
 
 fig = plt.figure(num='Forecasting')
 ax1 = plt.subplot(221)
-plt.plot(time+range(1972,2022), yforc.tolist()[0], 'r:',label='nile')
-plt.plot(time+range(1972,2023), aforc,label='forecast')
-plt.plot(time+range(1972,2023), np.hstack([np.tile(np.nan,len(time)),aforc[-51:]+0.675*sqrtPforc[-51:]]), 'g:',label='50% conf. +')
+time2 = time + list(range(1972,2022))
+plt.plot(time2, yforc.tolist()[0], 'r:',label='nile')
+plt.plot(time2+[2023], aforc,label='forecast')
+plt.plot(time2+[2023], np.hstack([np.tile(np.nan,len(time)),aforc[-51:]+0.675*sqrtPforc[-51:]]), 'g:',label='50% conf. +')
 plt.title('State forecast'); plt.xlim([1868,2026]); plt.ylim([450,1400])
-plt.plot(time+range(1972,2023), np.hstack([np.tile(np.nan,len(time)),aforc[-51:]-0.675*sqrtPforc[-51:]]), 'g:',label='50% conf. -')
+plt.plot(time2+[2023], np.hstack([np.tile(np.nan,len(time)),aforc[-51:]-0.675*sqrtPforc[-51:]]), 'g:',label='50% conf. -')
 plt.title('State forecast'); plt.xlim([1868,2026]); plt.ylim([450,1400]); plt.legend()
 ax2 = plt.subplot(222)
-plt.plot(time+range(1972,2023), Pforc)
+plt.plot(time2+[2023], Pforc)
 plt.title('State variance'); plt.xlim([1868,2026]); plt.ylim([4000,80000])
 ax3 = plt.subplot(223)
-plt.plot(time+range(1972,2023), aforc)
+plt.plot(time2+[2023], aforc)
 plt.title('Observation forecast'); plt.xlim([1868,2026]); plt.ylim([700,1200])
 ax4 = plt.subplot(224)
-plt.plot(time+range(1972,2022), Fforc)
+plt.plot(time2, Fforc)
 plt.title('Observation forecast variance'); plt.xlim([1868,2026]); plt.ylim([20000,96000])
 
 fig_count  = output_fig()
