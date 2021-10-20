@@ -3,6 +3,7 @@
 import sys
 import numpy as np
 from scipy.linalg import sqrtm
+from scipy import stats
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -117,8 +118,12 @@ fout.write("Irregular variance: %g\n" % bstsmir['H']['mat'][0,0])
 fout.write("Level variance: %g\n" % bstsmir['Q']['mat'][0,0])
 fout.write("Seasonal variance: %g\n" % bstsmir['Q']['mat'][1,1])
 fout.write('Variable             Coefficient     R. m. s. e.     t-value\n')
-fout.write("petrol coefficient   %-14.5g  %-14.5g  %g\n" % (alphahatir[-1,0],np.sqrt(Vir[-1,-1,-1]),alphahatir[-1,0]/np.sqrt(Vir[-1,-1,-1])))
-fout.write("level shift at 83.2  %-14.5g  %-14.5g  %g\n\n" % (alphahatir[-2,0],np.sqrt(Vir[-2,-2,-1]),alphahatir[-2,0]/np.sqrt(Vir[-2,-2,-1])))
+tval = alphahatir[-1,0]/np.sqrt(Vir[-1,-1,-1])
+pval = stats.t.sf(np.abs(tval),y.shape[1] - bstsmir.m)*2
+fout.write("petrol coefficient   %-14.5f  %-14.5f  %.5f [%.5f]\n" % (alphahatir[-1,0],np.sqrt(Vir[-1,-1,-1]),tval,pval))
+tval = alphahatir[-2,0]/np.sqrt(Vir[-2,-2,-1])
+pval = stats.t.sf(np.abs(tval),y.shape[1] - bstsmir.m)*2
+fout.write("level shift at 83.2  %-14.5f  %-14.5f  %.5f [%.5f]\n\n" % (alphahatir[-2,0],np.sqrt(Vir[-2,-2,-1]),tval,pval))
 
 fig = plt.figure(num='Estimated Components w/ intervention and regression')
 plt.subplot(311)
@@ -210,9 +215,13 @@ fout.write('Irregular disturbance   Level disturbance\n')
 fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
 fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('Level shift intervention:\n')
-fout.write('        Coefficient     R. m. s. e.     t-value\n')
-fout.write("front   %-14.5g  %-14.5g  %g\n" % (alphahat2i[-2,-1],np.sqrt(V2i[-2,-2,-1]), alphahat2i[-2,-1]/np.sqrt(V2i[-2,-2,-1])))
-fout.write("rear    %-14.5g  %-14.5g  %g\n\n" % (alphahat2i[-1,-1],np.sqrt(V2i[-1,-1,-1]), alphahat2i[-1,-1]/np.sqrt(V2i[-1,-1,-1])))
+fout.write('        Coefficient     R. m. s. e.     t-value    p-value\n')
+tval = alphahat2i[-2,-1]/np.sqrt(V2i[-2,-2,-1])
+pval = stats.t.sf(np.abs(tval),y.shape[1] - bstsmir.m)*2
+fout.write("front   %-14.5f  %-14.5f  %.5f   %.5f\n" % (alphahat2i[-2,-1],np.sqrt(V2i[-2,-2,-1]),tval,pval))
+tval = alphahat2i[-1,-1]/np.sqrt(V2i[-1,-1,-1])
+pval = stats.t.sf(np.abs(tval),y.shape[1] - bstsmir.m)*2
+fout.write("rear    %-14.5f  %-14.5f  %.5f   %.5f\n\n" % (alphahat2i[-1,-1],np.sqrt(V2i[-1,-1,-1]),tval,pval))
 
 #-- Add intervention only to front seat passenger series --#
 bibstsmi  = ssm.model_cat([bibstsm,ssm.model_mvreg(2,ssm.x_intv(y2.shape[1],'step',169),[[True],[False]])])
@@ -228,8 +237,10 @@ fout.write('Irregular disturbance   Level disturbance\n')
 fout.write(fline % (Qirr[0,0],Qirr[0,1],Qlvl[0,0],Qlvl[0,1]))
 fout.write(fline % (Qirr[1,0],Qirr[1,1],Qlvl[1,0],Qlvl[1,1]))
 fout.write('Level shift intervention:\n')
-fout.write('        Coefficient     R. m. s. e.     t-value\n')
-fout.write("front   %-14.5g  %-14.5g  %g\n\n" % (alphahati[-1,-1],np.sqrt(Vi[-1,-1,-1]),alphahati[-1,-1]/np.sqrt(Vi[-1,-1,-1])))
+fout.write('        Coefficient     R. m. s. e.     t-value    p-value\n')
+tval = alphahati[-1,-1]/np.sqrt(Vi[-1,-1,-1])
+pval = stats.t.sf(np.abs(tval),y.shape[1] - bstsmir.m)*2
+fout.write("front   %-14.5f  %-14.5f  %.5f   %.5f\n\n" % (alphahati[-1,-1],np.sqrt(Vi[-1,-1,-1]),tval,pval))
 
 comhati   = ssm.signal(alphahati, bibstsmi)
 lvlhati   = comhati[:,:,0]
