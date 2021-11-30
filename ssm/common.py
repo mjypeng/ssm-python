@@ -314,7 +314,7 @@ class ssmodel(dict):
         self['m']  = self['T'].shape[0]
         self['r']  = self['R'].shape[1]
         self['nparam'] = sum([self[M].nparam for M in ('H','Z','T','R','Q','c','a1','P1') if not self[M].constant]) + (self['A']['nparam'] if 'A' in self else 0)
-        self['mcom']   = [self['m']] # models built from ssmat constructor are considered a single "component"
+        self['mcom']   = kwargs['mcom'] if 'mcom' in kwargs else [self['m']] # models built from ssmat constructor are considered a single "component" unless otherwise specified
 
     def __getattr__(self, name):
         try:
