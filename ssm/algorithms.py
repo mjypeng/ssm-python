@@ -164,10 +164,10 @@ def _kalman(mode, n,y,mis,anymis,allmis, H,Z,T,R,Q,c,a1,P1,stationary,RQdyn, tol
         elif allmis[t]:
             #-- Kalman filter when all observations are missing --#
             if log_diag: iter_log[t] = 'allmis'
-            v     = np.zeros_like(v)
+            v     = np.zeros((y.shape[0],1))
             F     = Z[t] * (P * Z[t].T) + H[t]
             invF  = F.I #### TODO: Ignore diffuse initialization for now
-            K     = np.zeros_like(K)
+            K     = np.zeros((y.shape[0],y.shape[0]))
             L     = T[t].copy()
             a     = c[t] + T[t] * a
             P     = T[t] * P * T[t].T + RQRt[t]
@@ -885,7 +885,10 @@ def signal(alpha, model, t0=0, mcom=None):
         for i in range(ncom):
             ycom[:,:,i] = Zmat[:,mcom[i]:mcom[i+1]]*alpha[mcom[i]:mcom[i+1],:]
 
-    return ycom.transpose((2,1,0)).squeeze() if p == 1 else ycom
+    if p == 1:
+        ycom  = ycom.transpose((2,1,0)).squeeze()
+        if n == 1: ycom = ycom[:,None]
+    return ycom
 
 def signalvar(V, model, t0=0, mcom=None):
     """Retrieve signal component variances.
@@ -911,4 +914,7 @@ def signalvar(V, model, t0=0, mcom=None):
         for i in range(ncom):
             ycom[:,:,[t],i] = Z[:,mcom[i]:mcom[i+1]]*V[mcom[i]:mcom[i+1],mcom[i]:mcom[i+1],t]*Z[:,mcom[i]:mcom[i+1]].T
 
-    return ycom.transpose((3,2,0,1)).squeeze() if p == 1 else ycom
+    if p == 1:
+        ycom  = ycom.transpose((3,2,0,1)).squeeze()
+        if n == 1: ycom = ycom[:,None]
+    return ycom
