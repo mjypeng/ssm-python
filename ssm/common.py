@@ -372,6 +372,17 @@ def model_cat(models):
     final_model.mcom = [m for i in range(N) for m in models[i].mcom]
     return final_model
 
+def model_const(model):
+    """Create a constant (serializable) version of an ssmodel"""
+    H  = mat_const(model.H.mat,dynamic=model.H.dynamic,trans=False)
+    Z  = mat_const(model.Z.mat,dynamic=model.Z.dynamic,trans=True)
+    T  = mat_const(model.T.mat,dynamic=model.T.dynamic,trans=True)
+    R  = mat_const(model.R.mat,dynamic=model.R.dynamic,trans=True)
+    Q  = mat_const(model.Q.mat,dynamic=model.Q.dynamic,trans=False)
+    c  = mat_const(model.c.mat,dynamic=model.c.dynamic,trans=False)
+    return ssmodel(H=H,Z=Z,T=T,R=R,Q=Q,c=c,
+        a1=mat_const(model.a1.mat),P1=mat_const(model.P1.mat),mcom=model.mcom)
+
 #--------------------------------#
 #-- Function for Data Analysis --#
 #--------------------------------#
